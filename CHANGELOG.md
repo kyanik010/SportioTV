@@ -66,6 +66,26 @@
      that only redirected the in-app updater, so it has no section here. Everything from
      "## v5.1.0" downwards is the inherited OwnTV upstream history, not Sportio releases. -->
 
+## v1.0.7 — 2026-10-15
+
+### New features
+
+- **US feeds rank first for American college fixtures**
+- **NRL joins the league catalogue**
+- **Arabic, Dutch, Italian, Polish and Turkish channel languages**
+- **Channels per game slider with a minimum in your languages**
+- **Permanently hide languages from sports matching**
+- **Youth feeds no longer mix into senior fixtures**
+- **In-player fixture channel list on left/right**
+- **Live TV language filter with per-row country badges**
+- **Sport settings with tabs for leagues, channels and languages**
+- **Refresh button reloads a fixture's matched channels**
+- **Switching sources re-matches the open fixture**
+
+### Fixes
+
+- **Live TV categories hide groups without visible channels**
+
 ## v1.0.6 — 2026-10-13
 
 ### New features
