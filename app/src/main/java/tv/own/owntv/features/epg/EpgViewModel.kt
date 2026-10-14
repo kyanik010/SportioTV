@@ -54,6 +54,8 @@ import tv.own.owntv.core.repository.activeProfileSources
 import tv.own.owntv.core.repository.activeSourceIds
 import tv.own.owntv.core.settings.SettingsRepository
 import tv.own.owntv.core.settings.GuideWidthShares
+import tv.own.owntv.features.live.LiveLanguages
+import tv.own.owntv.features.sport.SportsPrefs
 
 sealed interface EpgMessage {
     data object CreateProfile : EpgMessage
@@ -118,6 +120,7 @@ class EpgViewModel(
     /** "Recently watched" in the category list reads the same history Live TV does. */
     private val historyDao: tv.own.owntv.core.database.dao.HistoryDao,
     private val reminderManager: tv.own.owntv.core.reminder.ReminderManager,
+    private val sportsPrefs: SportsPrefs,
 ) : ViewModel() {
 
     /** The categories' search text, held here so it survives the player (see LiveViewModel). */
@@ -418,6 +421,17 @@ class EpgViewModel(
             .launchIn(viewModelScope)
         // Reload when the category filter changes (#8).
         _categoryFilter
+            .drop(1)
+            .distinctUntilChanged()
+            .onEach { load() }
+            .launchIn(viewModelScope)
+        // Roadmap point 7: reload when the Live-TV language filter changes (same prefs as Live TV).
+        sportsPrefs.liveExcludedLanguages
+            .drop(1)
+            .distinctUntilChanged()
+            .onEach { load() }
+            .launchIn(viewModelScope)
+        sportsPrefs.liveShowOther
             .drop(1)
             .distinctUntilChanged()
             .onEach { load() }
@@ -895,6 +909,8 @@ class EpgViewModel(
         val q = _query.value.trim()
         val rawChannels = if (settings.guideShowEmpty.first()) channelDao.channelsForGuide(playlistIds, q, MAX_CHANNELS)
             else channelDao.channelsWithGuide(ids, q, MAX_CHANNELS)
+        val liveExcluded = sportsPrefs.liveExcludedLanguages.first()
+        val liveShowOther = sportsPrefs.liveShowOther.first()
         val favoriteIds = favoriteDao.observeFavoriteIds(pid, MediaType.LIVE).first().toSet()
         val sortGuideMode = settings.sortGuide.first()
         // Hidden categories keep their channels out of the guide too (parity with Live TV), and a
@@ -925,6 +941,10 @@ class EpgViewModel(
         val channels = withContext(Dispatchers.Default) {
             val auto = rawChannels
                 .filter { CustomizeKeys.channel(it) !in cust.hiddenItems }
+                // Roadmap point 7: language filter BEFORE sort (filter-vor-Cap, like the Sport
+                // matcher). The DAO LIMIT (MAX_CHANNELS) stays ahead of it — pushing the filter
+                // into SQL would need a core DAO change for an app-side setting.
+                .filter { LiveLanguages.isVisible(it.name, liveExcluded, liveShowOther) }
                 .filter {
                     memberIds != null || it.categoryId == null || it.categoryId !in hiddenCatIds
                 }

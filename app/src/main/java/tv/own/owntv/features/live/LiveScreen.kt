@@ -1,8 +1,11 @@
 package tv.own.owntv.features.live
 
 import tv.own.owntv.core.epg.displayLogoUrl
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +75,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.Key
 import tv.own.owntv.features.customize.categoryRestoreSummary
 import tv.own.owntv.features.customize.CategoryRestorePlan
+import tv.own.owntv.features.sport.SportLanguage
 import tv.own.owntv.core.customize.CustomizeKeys
 import tv.own.owntv.core.database.entity.ChannelEntity
 import tv.own.owntv.core.database.entity.ContentOrderEntity
@@ -87,6 +91,7 @@ import tv.own.owntv.features.settings.rememberPanelShares
 import tv.own.owntv.features.shell.components.CategoryContextMenu
 import tv.own.owntv.features.shell.components.CategoryRail
 import tv.own.owntv.ui.components.MoveOrderOverlay
+import tv.own.owntv.ui.components.OwnTVPopup
 import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
 import tv.own.owntv.ui.components.chNavPaging
@@ -110,6 +115,9 @@ import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.gridFocusTarget
 import tv.own.owntv.ui.format.rememberBestDateFormatter
 import tv.own.owntv.ui.format.rememberSystemTimeFormatter
+import tv.own.owntv.ui.stage.StageMenu
+import tv.own.owntv.ui.stage.StageMenuHeader
+import tv.own.owntv.ui.stage.StageMenuItem
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.LocalPopupFontFamily
 import tv.own.owntv.core.live.LiveKey
@@ -162,6 +170,29 @@ fun LiveScreen(
     val nowNext by vm.nowNext.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
+    // Roadmap point 7: broadcast-language filter. The options come from the playlist's own country
+    // tags (cached scan in the view model); toggles persist in the sports DataStore file.
+    val liveExcluded by vm.liveExcludedLanguages.collectAsStateWithLifecycle()
+    val liveShowOther by vm.liveShowOther.collectAsStateWithLifecycle()
+    val liveOptions by vm.liveLanguageOptions.collectAsStateWithLifecycle()
+    var languageOpen by remember { mutableStateOf(false) }
+    // Fresh tags after a playlist sync: rescan on entry, unless the first scan is still running.
+    LaunchedEffect(Unit) { if (vm.liveLanguageOptions.value.isNotEmpty()) vm.refreshLiveLanguages() }
+    val liveAllOn = liveExcluded.isEmpty() && liveShowOther
+    val liveActiveCount = liveOptions.count { LiveLanguages.isEnabled(it, liveExcluded, liveShowOther) }
+    // Roadmap point 7: groups with zero visible channels leave the rail while the filter is on.
+    val liveVisibleCounts by vm.liveVisibleCounts.collectAsStateWithLifecycle()
+    // The rail as the category sheet/column shows it: provider folders with zero visible channels
+    // are gone while a language filter is on (null counts = filter off = raw rail). Index-consistent
+    // with categoryEntries below (same predicate there), so restore, selection and CH± address rows.
+    val visibleRailItems = remember(railItems, liveVisibleCounts) {
+        val visible = liveVisibleCounts
+        if (visible == null) railItems
+        else railItems.filter { item ->
+            val folderId = (item.key as? LiveKey.Folder)?.id
+            folderId == null || (visible[folderId] ?: 0) > 0
+        }
+    }
     val livePreviewSetting by vm.livePreviewEnabled.collectAsStateWithLifecycle()
     val channels = vm.channels.collectAsLazyPagingItems()
     val moveState by vm.moveState.collectAsStateWithLifecycle()
@@ -438,7 +469,7 @@ fun LiveScreen(
     var categoryMoveWasOpen by remember { mutableStateOf(false) }
     // Land on the row the menu was opened from; fall back to the column if that row is gone (Hide).
     fun restoreToContextCategory() {
-        val row = contextCategoryKey?.let { k -> railItems.indexOfFirst { it.key == k } }?.takeIf { it >= 0 }
+        val row = contextCategoryKey?.let { k -> visibleRailItems.indexOfFirst { it.key == k } }?.takeIf { it >= 0 }
         contextCategoryKey = null
         if (row != null) railFocusRow = row else runCatching { railFocus.requestFocus() }
     }
@@ -503,8 +534,10 @@ fun LiveScreen(
         vm.revealDone()
     }
 
-    val selectedIndex = railItems.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
-    val selectedItem = railItems.getOrNull(selectedIndex)
+    // Indices below address the filtered rail (a language filter may hide groups), never the
+    // raw rail — selecting row N must open row N.
+    val selectedIndex = visibleRailItems.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
+    val selectedItem = visibleRailItems.getOrNull(selectedIndex)
     val selectedLabel = selectedItem?.displayLabel() ?: stringResource(R.string.content_category_all_channels)
 
     val liveLayout by vm.liveLayout.collectAsStateWithLifecycle()
@@ -554,7 +587,7 @@ fun LiveScreen(
         }
     }
 
-    val (categoryEntries, groupsHeading) = liveCategoryEntries(railItems, railCounts)
+    val (categoryEntries, groupsHeading) = liveCategoryEntries(visibleRailItems, railCounts, liveVisibleCounts)
     val headerLabel = if (selectedItem?.key is LiveKey.Folder || selectedItem?.key is LiveKey.Custom) ProviderTags.parse(selectedLabel).name else selectedLabel
 
     // CH± in the categories moves the highlight only; OK picks (owner, 2026-10-01).
@@ -576,16 +609,16 @@ fun LiveScreen(
             upSkip = chNavUpSkip,
             downSkip = chNavDownSkip,
             isFocused = { railPaneFocused },
-            lastIndex = { railItems.size - 1 },
+            lastIndex = { visibleRailItems.size - 1 },
             currentTargetIndex = { catFocusIndex ?: selectedIndex },
             onJumpToIndex = { idx -> catFocusIndex = idx; railFocusRow = idx },
         )
     val onCategorySelect: (Int) -> Unit = { idx ->
-        railItems.getOrNull(idx)?.let { vm.select(it.key) }
+        visibleRailItems.getOrNull(idx)?.let { vm.select(it.key) }
         if (categoriesOpen) { categoriesOpen = false; focusChannelList() }
     }
     val onCategoryLongSelect: (Int) -> Unit = { idx ->
-        railItems.getOrNull(idx)?.let { item ->
+        visibleRailItems.getOrNull(idx)?.let { item ->
             if (item.key is LiveKey.Folder || item.key is LiveKey.Custom) {
                 contextCategory = item
                 contextCategoryKey = item.key
@@ -779,6 +812,12 @@ fun LiveScreen(
                         icon = OwnTVIcon.SORT,
                         value = if (sortMode == tv.own.owntv.core.settings.SettingsRepository.SortMode.ALPHA) stringResource(R.string.settings_sort_alpha) else stringResource(R.string.content_epg_sort_provider),
                         onClick = vm::toggleSort,
+                    )
+                    tv.own.owntv.ui.stage.StageTool(
+                        text = null,
+                        icon = OwnTVIcon.LANGUAGE,
+                        value = if (liveAllOn) stringResource(R.string.live_language_all) else stringResource(R.string.live_language_filtered, liveActiveCount, liveOptions.size),
+                        onClick = { languageOpen = true },
                     )
                     tv.own.owntv.ui.stage.StageTool(
                         text = stringResource(R.string.content_live_guide_view),
@@ -1040,6 +1079,19 @@ fun LiveScreen(
         )
     }
 
+    // Roadmap point 7: per-language on/off for Live TV (options from the playlist scan).
+    if (languageOpen) {
+        LiveLanguageDialog(
+            options = liveOptions,
+            excluded = liveExcluded,
+            showOther = liveShowOther,
+            onToggle = { vm.setLiveExcludedLanguages(toggleLiveExcluded(liveExcluded, it)) },
+            onToggleOther = { vm.setLiveShowOther(!liveShowOther) },
+            onSelectAll = { vm.setLiveExcludedLanguages(emptySet()); vm.setLiveShowOther(true) },
+            onDismiss = { languageOpen = false },
+        )
+    }
+
     // Long-press a channel → quick actions.
     contextChannel?.let { ch ->
         ChannelContextMenu(
@@ -1185,6 +1237,76 @@ fun LiveScreen(
         )
     }
 }
+
+/**
+ * Live-TV broadcast languages (roadmap point 7): one row per language found in the playlist scan
+ * plus the separate Other switch for tagless/unmapped channels. Rows are `StageMenuItem` (its
+ * texts carry ellipsis), so no raw `Text` with `maxLines` is added here.
+ */
+@Composable
+private fun LiveLanguageDialog(
+    options: Set<String>,
+    excluded: Set<String>,
+    showOther: Boolean,
+    onToggle: (String) -> Unit,
+    onToggleOther: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { firstFocus.requestFocus() }
+    }
+    BackHandler { onDismiss() }
+    OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
+        Box(Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim)) {
+            Column(
+                Modifier
+                    .padding(start = 560.mpx, top = 150.mpx, bottom = 24.mpx)
+                    .width(640.mpx)
+                    .trapAllFocusExit()
+                    .focusGroup(),
+            ) {
+                StageMenu(Modifier.verticalScroll(rememberScrollState())) {
+                    StageMenuHeader(
+                        title = stringResource(R.string.live_language_title),
+                        subtitle = stringResource(R.string.live_language_subtitle),
+                    )
+                    StageMenuItem(
+                        text = stringResource(R.string.live_language_all),
+                        icon = OwnTVIcon.LANGUAGE,
+                        checked = excluded.isEmpty() && showOther,
+                        onClick = onSelectAll,
+                        modifier = Modifier.focusRequester(firstFocus),
+                    )
+                    // Playlist-derived rows only (plus a switched-off language until it is back on,
+                    // so it can be re-enabled even when the scan no longer lists it).
+                    val rows = LiveLanguages.order.filter { key ->
+                        if (key == LiveLanguages.OTHER) LiveLanguages.OTHER in options || !showOther
+                        else key in options || key in excluded
+                    }
+                    rows.forEach { key ->
+                        val labelRes = if (key == LiveLanguages.OTHER) null
+                        else runCatching { SportLanguage.valueOf(key).labelRes }.getOrNull()
+                        val label = if (key == LiveLanguages.OTHER) stringResource(R.string.live_language_other)
+                        else if (labelRes != null) stringResource(labelRes) else key
+                        StageMenuItem(
+                            text = label,
+                            icon = OwnTVIcon.LANGUAGE,
+                            checked = LiveLanguages.isEnabled(key, excluded, showOther),
+                            onClick = { if (key == LiveLanguages.OTHER) onToggleOther() else onToggle(key) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Multi-select on the excluded set: picking a language switches it off, picking again back on. */
+private fun toggleLiveExcluded(excluded: Set<String>, key: String): Set<String> =
+    if (key in excluded) excluded - key else excluded + key
 
 /**
  * ☰ Channel options (P3-04): the Stage options menu, 540 wide over the stage, above the scrim. Header

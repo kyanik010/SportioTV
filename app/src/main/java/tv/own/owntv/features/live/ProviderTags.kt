@@ -1,6 +1,7 @@
 package tv.own.owntv.features.live
 
 import java.text.Normalizer
+import tv.own.owntv.features.sport.SportLanguages
 
 /**
  * A provider name split the way Stage shows it (G5): "DE| Sky Cinema Premieren ᴴᴰ" becomes the name
@@ -42,6 +43,14 @@ object ProviderTags {
      */
     fun sharedCountry(names: List<ProviderName>): String? =
         names.map { it.country }.distinct().singleOrNull()
+
+    /**
+     * The country badge a channel/category row shows for [rawName]: [parse] covers the `XX|` group
+     * form, [SportLanguages.countryCodeOf] the `XX:` / `XX|` / `XX/` channel forms. Null when the
+     * name carries no tag — the row then shows no badge, never a guess.
+     */
+    fun channelCountry(rawName: String, parsed: ProviderName = parse(rawName)): String? =
+        parsed.country ?: SportLanguages.countryCodeOf(rawName)
 
     // Superscript digits and letters, and the small-capital/modifier letters providers use for them
     // (ᴴᴰ, ʳᴬᵂ, ⁴ᴷ). Each folds to a plain letter or digit under NFKC.

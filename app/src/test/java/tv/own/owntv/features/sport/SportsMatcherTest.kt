@@ -116,32 +116,35 @@ class SportsMatcherTest {
     }
 
     // --- (f) the language filter runs before the cap ------------
+    //
+    // The channel limit is clamped to [SportsMatcher.MinChannelLimit] (5) since the configurable
+    // limit (roadmap point 4), so this uses five foreign feeds to fill every slot.
 
     @Test
     fun theLanguageFilterCutsBeforeTheLimit() = runBlocking {
+        val foreign = (1..5).map { n ->
+            channel(100L + n, "IT: SKY SPORT ARENA $n", epgKey = "arena$n")
+        }
         val store = FakeStore(
-            channels = listOf(
-                channel(6, "IT: SKY SPORT ARENA", epgKey = "arena"),
-                channel(7, "DE: SKY SPORT PREMIER LEAGUE", epgKey = "de-premier"),
-            ),
-            programmes = listOf(
-                programme("arena", title = "Coventry City v Newcastle United"),
-                programme(
-                    "de-premier",
-                    title = "Fußball: England, Premier League",
-                    description = "Coventry City gegen die Magpies.",
-                ),
+            channels = foreign + channel(200, "DE: SKY SPORT PREMIER LEAGUE", epgKey = "de-premier"),
+            programmes = (1..5).map { n ->
+                programme("arena$n", title = "Coventry City v Newcastle United")
+            } + programme(
+                "de-premier",
+                title = "Fußball: England, Premier League",
+                description = "Coventry City gegen die Magpies.",
             ),
         )
         val matcher = matcher(store)
 
-        // Without a filter the +10 Italian feed wins the single slot...
-        val unfiltered = matcher.match(fixture(), languages = emptySet(), limit = 1)
-        assertEquals(listOf("IT: SKY SPORT ARENA"), unfiltered.map { it.channelName })
+        // Without a filter the five +10 foreign feeds win every slot...
+        val unfiltered = matcher.match(fixture(), languages = emptySet(), limit = 5)
+        assertEquals(5, unfiltered.size)
+        assertTrue(unfiltered.none { it.channelName.startsWith("DE:") })
 
         // ...but the German feed (score 3) must still be visible to a German viewer, which only works
-        // if the filter drops the foreign channel BEFORE `take(limit)`.
-        val german = matcher.match(fixture(), languages = setOf(SportLanguage.GERMAN), limit = 1)
+        // if the filter drops the foreign channels BEFORE `take(limit)`.
+        val german = matcher.match(fixture(), languages = setOf(SportLanguage.GERMAN), limit = 5)
         assertEquals(listOf("DE: SKY SPORT PREMIER LEAGUE"), german.map { it.channelName })
     }
 
@@ -336,10 +339,272 @@ class SportsMatcherTest {
         assertEquals(listOf(4, 3), matches.map { it.score })
     }
 
+    // --- (q) US region priority: the US feed wins the tie on equal evidence ------------
+
+    @Test
+    fun usFeedWinsOverCaAndAuFeedsOnEqualEvidence() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(30, "CA: TSN COLLEGE FOOTBALL", epgKey = "ca-cfb"),
+                channel(31, "US: ESPN COLLEGE PRIMETIME", epgKey = "us-cfb"),
+                channel(32, "AU: ESPN AU COLLEGE", epgKey = "au-cfb"),
+            ),
+            programmes = listOf(
+                programme("ca-cfb", title = "Ohio State v Michigan"),
+                programme("us-cfb", title = "Ohio State v Michigan"),
+                programme("au-cfb", title = "Ohio State v Michigan"),
+            ),
+        )
+
+        val matches = matcher(store).match(collegeFixture())
+
+        // Same game, same +10 title evidence everywhere (short names via aliases); the US home
+        // feed takes the bonus and sorts first, the foreign feeds keep their order behind it.
+        assertEquals(
+            listOf("US: ESPN COLLEGE PRIMETIME", "CA: TSN COLLEGE FOOTBALL", "AU: ESPN AU COLLEGE"),
+            matches.map { it.channelName },
+        )
+        assertEquals(listOf(12, 10, 10), matches.map { it.score })
+    }
+
+    // --- (r) US region priority: no US feed leaves a non-empty foreign list ------------
+
+    @Test
+    fun foreignFeedsRemainWithoutAUsFeed() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(33, "CA: TSN COLLEGE FOOTBALL", epgKey = "ca-cfb"),
+                channel(34, "AU: ESPN AU COLLEGE", epgKey = "au-cfb"),
+            ),
+            programmes = listOf(
+                programme("ca-cfb", title = "Ohio State v Michigan"),
+                programme("au-cfb", title = "Ohio State v Michigan"),
+            ),
+        )
+
+        val matches = matcher(store).match(collegeFixture())
+
+        // Bonus-only, never a filter: the region logic must not empty the pane.
+        assertEquals(
+            listOf("CA: TSN COLLEGE FOOTBALL", "AU: ESPN AU COLLEGE"),
+            matches.map { it.channelName },
+        )
+        assertEquals(listOf(10, 10), matches.map { it.score })
+    }
+
+    // --- (s) youth firewall: a senior CL fixture never matches youth programmes ------------
+
+    @Test
+    fun seniorFixtureIgnoresYouthProgrammes() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(40, "DE: SKY SPORT TOP EVENT", epgKey = "youth1"),
+                channel(41, "DE: SKY SPORT MIX", epgKey = "youth2"),
+                channel(42, "DE: SKY SPORT NEWS", epgKey = "youth3"),
+                channel(43, "DE: SKY SPORT EXTRA", epgKey = "youth4"),
+            ),
+            programmes = listOf(
+                programme("youth1", title = "Coventry City v Newcastle United Youth League"),
+                programme("youth2", title = "Coventry City v Newcastle U19"),
+                programme("youth3", title = "Coventry City v Newcastle U-19"),
+                programme("youth4", title = "Jugendliga: Coventry City gegen Newcastle"),
+            ),
+        )
+
+        assertTrue(matcher(store).match(championsFixture()).isEmpty())
+    }
+
+    // --- (t) youth firewall: a youth fixture still matches its youth programmes ------------
+
+    @Test
+    fun youthFixtureStillMatchesYouthProgrammes() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(channel(44, "DE: SKY SPORT TOP EVENT", epgKey = "youth")),
+            programmes = listOf(
+                programme("youth", title = "Coventry City v Newcastle United Youth League"),
+            ),
+        )
+
+        val matches = matcher(store).match(youthFixture())
+
+        assertEquals(listOf("DE: SKY SPORT TOP EVENT"), matches.map { it.channelName })
+        assertEquals(10, matches.single().score)
+    }
+
+    // --- (u) youth firewall, symmetric: a youth fixture ignores senior programmes ------------
+
+    @Test
+    fun youthFixtureIgnoresSeniorProgrammes() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(channel(45, "IT: SKY SPORT ARENA", epgKey = "arena")),
+            programmes = listOf(programme("arena", title = "Coventry City v Newcastle United")),
+        )
+
+        assertTrue(matcher(store).match(youthFixture()).isEmpty())
+    }
+
+    // --- (v) youth firewall in the channel name ------------
+
+    @Test
+    fun youthChannelNameMatchesOnlyTheYouthFixture() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(46, "YOUTH | Coventry City v Newcastle United HD"),
+            ),
+            programmes = emptyList(),
+        )
+
+        assertTrue(matcher(store).match(championsFixture()).isEmpty())
+
+        val youthMatches = matcher(store).match(youthFixture())
+        assertEquals(
+            listOf("YOUTH | Coventry City v Newcastle United HD"),
+            youthMatches.map { it.channelName },
+        )
+        assertEquals(4, youthMatches.single().score)
+    }
+
+    // --- (s) strict options: preferred filter before the cap, capped to limit ------------
+
+    @Test
+    fun strictOptionsKeepOnlyPreferredUpToLimit() = runBlocking {
+        val channels = (1..6).map { channel(100L + it, "DE: SKY SPORT $it", epgKey = "de-$it") } +
+            (1..3).map { channel(200L + it, "IT: SKY SPORT $it", epgKey = "it-$it") }
+        val programmes = (1..6).map { programme("de-$it", title = "Coventry City v Newcastle United") } +
+            (1..3).map { programme("it-$it", title = "Coventry City v Newcastle United") }
+        val store = FakeStore(channels = channels, programmes = programmes)
+
+        val matches = matcher(store).match(
+            fixture(),
+            SportMatchOptions(languages = setOf(SportLanguage.GERMAN), limit = 5),
+        )
+
+        assertEquals(5, matches.size)
+        assertTrue(matches.all { it.channelName.startsWith("DE:") })
+    }
+
+    // --- (t) the limit is clamped to the 5–50 range ------------
+
+    @Test
+    fun limitBelowMinimumIsClampedUp() = runBlocking {
+        val channels = (1..6).map { channel(100L + it, "DE: SKY SPORT $it", epgKey = "de-$it") }
+        val programmes = (1..6).map { programme("de-$it", title = "Coventry City v Newcastle United") }
+        val store = FakeStore(channels = channels, programmes = programmes)
+
+        val matches = matcher(store).match(
+            fixture(),
+            SportMatchOptions(languages = setOf(SportLanguage.GERMAN), limit = 2),
+        )
+
+        assertEquals(SportsMatcher.MinChannelLimit, matches.size)
+    }
+
+    // --- (u) strict never pads below the quota, legacy falls back ------------
+
+    @Test
+    fun strictModeNeverPadsBelowTheMinimumWhileLegacyFallsBack() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(301, "DE: SKY SPORT 1", epgKey = "de-1"),
+                channel(302, "DE: SKY SPORT 2", epgKey = "de-2"),
+                channel(303, "IT: SKY SPORT 1", epgKey = "it-1"),
+                channel(304, "IT: SKY SPORT 2", epgKey = "it-2"),
+                channel(305, "IT: SKY SPORT 3", epgKey = "it-3"),
+            ),
+            programmes = listOf(
+                programme("de-1", title = "Coventry City v Newcastle United"),
+                programme("de-2", title = "Coventry City v Newcastle United"),
+                programme("it-1", title = "Coventry City v Newcastle United"),
+                programme("it-2", title = "Coventry City v Newcastle United"),
+                programme("it-3", title = "Coventry City v Newcastle United"),
+            ),
+        )
+        val matcher = matcher(store)
+
+        // Strict: two German hits stay two German hits — no Italian padding up to the quota of 5.
+        val strict = matcher.match(fixture(), SportMatchOptions(languages = setOf(SportLanguage.GERMAN)))
+        assertEquals(listOf("DE: SKY SPORT 1", "DE: SKY SPORT 2"), strict.map { it.channelName })
+
+        // Legacy: below the quota the full list comes back instead of an honestly short one.
+        val legacy = matcher.match(
+            fixture(),
+            SportMatchOptions(languages = setOf(SportLanguage.GERMAN), strict = false),
+        )
+        assertEquals(5, legacy.size)
+
+        // Legacy with a met quota keeps the preferred-only list.
+        val legacyMet = matcher.match(
+            fixture(),
+            SportMatchOptions(languages = setOf(SportLanguage.GERMAN), strict = false, minPreferred = 2),
+        )
+        assertEquals(listOf("DE: SKY SPORT 1", "DE: SKY SPORT 2"), legacyMet.map { it.channelName })
+    }
+
+    // --- (v) excluded languages drop everything, including exact channels ------------
+
+    @Test
+    fun excludedLanguagesDropEverythingIncludingExactChannels() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(
+                channel(401, "DE: SKY SPORT BUNDESLIGA", epgKey = "de-x"),
+                channel(402, "DE: Coventry City v Newcastle United HD"),
+                channel(403, "UK: SKY SPORTS PREMIER LEAGUE", epgKey = "uk-x"),
+                channel(404, "SKY SPORT EXTRA", epgKey = "extra"),
+            ),
+            programmes = listOf(
+                programme("de-x", title = "Coventry City v Newcastle United"),
+                programme("uk-x", title = "Coventry City v Newcastle United"),
+                programme("extra", title = "Coventry City v Newcastle United"),
+            ),
+        )
+
+        val matches = matcher(store).match(
+            fixture(),
+            SportMatchOptions(excludedLanguages = setOf(SportLanguage.GERMAN)),
+        )
+
+        // The exact per-event channel does NOT survive its language being excluded; the untagged
+        // channel (no recognisable language) is not excluded and stays.
+        assertEquals(
+            listOf("UK: SKY SPORTS PREMIER LEAGUE", "SKY SPORT EXTRA"),
+            matches.map { it.channelName },
+        )
+    }
+
+    // --- (w) the matcher reads the live playlists fresh on every call ------------
+    //
+    // Only the view-model cache can go stale across a source change: the matcher itself asks the
+    // provider on every match, so flipping the ids between two calls flips the result.
+
+    @Test
+    fun matcherReadsLiveSourcesFreshOnEveryCall() = runBlocking {
+        val store = FakeStore(
+            channels = listOf(channel(500, "DE: SKY SPORT TOP EVENT", epgKey = "fresh")),
+            programmes = listOf(programme("fresh", title = "Coventry City v Newcastle United")),
+        )
+        var ids: List<Long> = listOf(SourceId)
+        val matcher = SportsMatcher(
+            channelDao = store.channelDao,
+            epgDao = store.epgDao,
+            vocab = vocab,
+            sources = LiveSourceIdsProvider { ids },
+        )
+
+        assertEquals(1, matcher.match(fixture()).size)
+        ids = emptyList()
+        assertTrue(matcher.match(fixture()).isEmpty())
+        ids = listOf(SourceId)
+        assertEquals(1, matcher.match(fixture()).size)
+    }
+
     // --- fixtures / vocabulary ------------------------------------------------------------------
 
     private val vocab = SportsVocab.of(
-        aliases = mapOf("Newcastle United" to listOf("Magpies")),
+        aliases = mapOf(
+            "Newcastle United" to listOf("Magpies"),
+            "Ohio State Buckeyes" to listOf("Ohio State", "OSU", "Buckeyes"),
+            "Michigan Wolverines" to listOf("Michigan", "Wolverines"),
+        ),
         teamStopwords = setOf("fc", "club"),
         broadcastStopwords = setOf("sky", "sport", "hd", "tv"),
         sportWords = setOf("football", "soccer", "fussball"),
@@ -362,6 +627,22 @@ class SportsMatcherTest {
         statusLine = "20:55",
         home = SportTeam("1", "Coventry City", "COV", null, null, "1", false, "home"),
         away = SportTeam("2", "Newcastle United", "NEW", null, null, "0", false, "away"),
+        broadcasts = emptyList(),
+        venue = null,
+    )
+
+    private fun championsFixture() = fixture().copy(id = "cl-1", leagueId = "soccer.uefa.champions")
+
+    private fun youthFixture() = fixture().copy(id = "yl-1", leagueId = "soccer.uefa.youth")
+
+    private fun collegeFixture() = Fixture(
+        id = "cfb-1",
+        leagueId = "football.college-football",
+        dateMs = Noon,
+        state = FixtureState.LIVE,
+        statusLine = "Q3 04:12",
+        home = SportTeam("1", "Ohio State Buckeyes", "OSU", null, null, "21", false, "home"),
+        away = SportTeam("2", "Michigan Wolverines", "MICH", null, null, "17", false, "away"),
         broadcasts = emptyList(),
         venue = null,
     )

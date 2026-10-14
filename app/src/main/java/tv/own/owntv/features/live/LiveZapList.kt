@@ -57,6 +57,12 @@ class LiveZapList(
     private val _key = MutableStateFlow<LiveKey?>(null)
     val key: StateFlow<LiveKey?> = _key.asStateFlow()
 
+    /** Non-null while the armed list is a sport fixture's matched channels (roadmap point 6): the
+     *  fixture title for the overlay heading, and the marker that the player's Right key opens this
+     *  fixture list instead of the watch history. Any other arming path clears it. */
+    private val _sportTitle = MutableStateFlow<String?>(null)
+    val sportTitle: StateFlow<String?> = _sportTitle.asStateFlow()
+
     /** Provider category the list came from, or null for a synthetic/caller-owned rail. */
     private var categoryId: Long? = null
     private var armed = false
@@ -136,6 +142,14 @@ class LiveZapList(
         publish(channels, categoryId = categoryId, title = title, key = key)
     }
 
+    /** Adopt a sport fixture's matched channels — the in-player zap context for roadmap point 6.
+     *  CH± steps through the fixture list and the overlay heading names the fixture; the title
+     *  doubles as the sport-context marker (see [sportTitle]). */
+    fun armSport(channels: List<ChannelEntity>, title: String?) {
+        loadJob?.cancel()
+        publish(channels, categoryId = null, title = title, key = null, sportTitle = title)
+    }
+
     /**
      * Commit a new zap context. Any direct-tune rebuild still in flight is dropped first: it was
      * started for a context the user has now left, and its guards (newest generation, tuned channel
@@ -147,13 +161,14 @@ class LiveZapList(
      * empty, and killing a healthy rebuild for a category the user cannot even enter would leave CH±
      * with neither a list nor an anchor.
      */
-    private fun publish(loaded: List<ChannelEntity>, categoryId: Long?, title: String?, key: LiveKey?) {
+    private fun publish(loaded: List<ChannelEntity>, categoryId: Long?, title: String?, key: LiveKey?, sportTitle: String? = null) {
         cancelPendingRebuild()
         this.categoryId = categoryId
         armed = true
         replace(loaded)
         _title.value = title
         _key.value = key
+        _sportTitle.value = sportTitle
     }
 
     /** Publish a list without touching the context around it — the guarded rebuild's landing point. */

@@ -22,6 +22,7 @@
     <string name="sport_loading">Loading…</string>
     <string name="sport_load_failed">Sports data could not be loaded</string>
     <string name="sport_retry">Retry</string>
+    <string name="sport_refresh_channels">Refresh channels</string>
     <string name="sport_no_games">No games</string>
     <string name="sport_venue">Venue</string>
     <string name="sport_broadcast">TV</string>
@@ -32,6 +33,9 @@
     <string name="sport_venue_separator">, </string>
     <string name="sport_settings">Sport settings</string>
     <string name="sport_settings_leagues">Leagues shown</string>
+    <string name="sport_settings_tab_leagues">Leagues</string>
+    <string name="sport_settings_tab_channels">Channels</string>
+    <string name="sport_settings_tab_languages">Languages</string>
     <string name="sport_add_leagues">Add leagues</string>
     <string name="sport_picker_title">Leagues</string>
     <string name="sport_picker_subtitle">Pick the leagues shown and loaded</string>
@@ -60,5 +64,28 @@
     <string name="sport_language_spanish">Spanish</string>
     <string name="sport_language_portuguese">Portuguese</string>
     <string name="sport_language_french">French</string>
+    <string name="sport_language_dutch">Dutch</string>
+    <string name="sport_language_italian">Italian</string>
+    <string name="sport_language_polish">Polish</string>
+    <string name="sport_language_turkish">Turkish</string>
+    <string name="sport_language_arabic">Arabic</string>
     <string name="sport_language_filter">Language: %1$s</string>
+    <string name="sport_channel_limit_title">Channels per game</string>
+    <string name="sport_channel_limit_hint">Change with left and right</string>
+    <plurals name="sport_language_quota">
+        <item quantity="one">At least %1$d channel in your languages, otherwise a shorter list</item>
+        <item quantity="other">At least %1$d channels in your languages, otherwise a shorter list</item>
+    </plurals>
+    <string name="sport_exclude_title">Always hide</string>
+    <string name="sport_exclude_subtitle">These languages never appear, not even as exact event channels</string>
+    <string name="sport_region_title">Region</string>
+    <string name="sport_region_switch_hint">Left and right switch region</string>
+    <string name="sport_region_cycler_value">‹ %1$s ›</string>
+    <string name="sport_sublevel_chevron">›</string>
+    <string name="sport_preferred_title">Preferred languages</string>
+    <string name="live_language_title">Languages</string>
+    <string name="live_language_subtitle">Which languages should Live TV show?</string>
+    <string name="live_language_all">All languages</string>
+    <string name="live_language_other">Other</string>
+    <string name="live_language_filtered">%1$d of %2$d</string>
 </resources>

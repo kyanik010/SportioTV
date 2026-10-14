@@ -9,6 +9,27 @@ import tv.own.owntv.core.database.entity.ChannelEntity
 import tv.own.owntv.core.database.entity.EpgProgrammeEntity
 
 /**
+ * What the channel list of one fixture is filtered to (`docs/sport-roadmap.md` Punkt 4).
+ *
+ * @param languages the preferred languages (empty = all).
+ * @param excludedLanguages languages dropped first — an exact per-event channel does NOT survive
+ *   its language being excluded (excluding is an explicit "never show").
+ * @param limit how many channels one fixture shows, clamped to [SportsMatcher.MinChannelLimit] ..
+ *   [SportsMatcher.MaxChannelLimit].
+ * @param minPreferred the minimum preferred-language hits for the list to count as covered: below
+ *   it, legacy mode falls back to the full (post-exclude) list, while strict mode keeps the
+ *   honestly shorter preferred list and never pads it with foreign feeds.
+ * @param strict when true (default), no never-empty fallback — a short list stays short.
+ */
+data class SportMatchOptions(
+    val languages: Set<SportLanguage> = emptySet(),
+    val excludedLanguages: Set<SportLanguage> = emptySet(),
+    val limit: Int = SportsMatcher.DefaultChannelLimit,
+    val minPreferred: Int = SportsMatcher.MinPreferredCount,
+    val strict: Boolean = true,
+)
+
+/**
  * Resolves an ESPN fixture to channels from the user's own playlists — Lume's EPG-based channel
  * matching (AGPL-3.0, https://github.com/bilipp/Lume), adapted to OwnTV's DAOs.
  *
@@ -49,6 +70,19 @@ import tv.own.owntv.core.database.entity.EpgProgrammeEntity
  * broadcasters) is found only when a *nickname* supplies the other — hence the aliases in
  * `res/raw/sports_matching.json` (`Newcastle United → Magpies`).
  *
+ * ## Region priority (US fixtures, 2026-10-14)
+ *
+ * A `US:`-tagged feed of a US-league game (college football, NFL, …) sorts above an equally
+ * evidenced foreign feed (`CA:`, `AU:`, `UK:`) through a small score bonus in pass 2. Bonus-only,
+ * never a filter: without a US feed the list keeps its foreign entries instead of going empty.
+ *
+ * ## Youth firewall (senior vs. youth, 2026-10-14)
+ *
+ * A senior fixture (e.g. `uefa.champions`) never scores a youth-marked programme or channel name
+ * (`youth`, `jugend`, `u17–u23` incl. hyphenated `u-19`), and a youth fixture never scores a
+ * non-youth one — symmetric, checked on normalized text via [SportNameMatch]. A generic channel
+ * name without a marker still matches either side through its guide line; only the marker decides.
+ *
  * ## Phases
  *
  *  - **Phase 1:** alias/exonym expansion + whole-word, accent-folded scoring + EPG discovery.
@@ -83,51 +117,89 @@ class SportsMatcher(
     suspend fun match(
         fixture: Fixture,
         languages: Set<SportLanguage> = emptySet(),
-        limit: Int = DefaultLimit,
+        limit: Int = DefaultChannelLimit,
     ): List<ChannelMatch> =
         withContext(Dispatchers.IO) {
-            val sourceIds = sources.liveSourceIds()
-            if (sourceIds.isEmpty()) return@withContext emptyList()
-
-            val home = fixture.home
-            val away = fixture.away
-            val teamSport = home != null && away != null
-            // A duel is a VERSUS fixture with two entries and no home/away (tennis singles, MMA).
-            // Doubles carry one "A / B" roster name per side; leaderboards and EVENTs never qualify.
-            val duelSides = fixture.duelSides()
-            val duelSport = !teamSport && duelSides != null
-
-            val from = fixture.dateMs - EpgBeforeMs
-            val to = fixture.dateMs + EpgAfterMs
-
-            // Pass 1 — candidates, from channel names (legacy) and from the guide (new).
-            val candidates = discoverCandidates(fixture, teamSport, duelSport, sourceIds, from, to)
-            if (candidates.isEmpty()) return@withContext emptyList()
-            // Pass 2 — score each candidate against the fixture.
-            val homeTokens = home?.scoringTokens().orEmpty()
-            val awayTokens = away?.scoringTokens().orEmpty()
-            val sideATokens = duelSides?.first?.sideTokens().orEmpty()
-            val sideBTokens = duelSides?.second?.sideTokens().orEmpty()
-            val tournamentTokens = fixture.tournamentTokens()
-
-            val scored = candidates.values.mapNotNull { channel ->
-                scoreChannel(
-                    channel = channel,
-                    fixture = fixture,
-                    home = home,
-                    away = away,
-                    homeTokens = homeTokens,
-                    awayTokens = awayTokens,
-                    sideATokens = sideATokens,
-                    sideBTokens = sideBTokens,
-                    tournamentTokens = tournamentTokens,
-                    from = from,
-                    to = to,
-                )
-            }.sortedByDescending { it.score }
-            // Preferred languages first (never-empty fallback lives in SportLanguages.filter).
-            SportLanguages.filter(scored, languages).take(limit)
+            // Legacy path: quota 1, so the full-list fallback triggers exactly when the filter
+            // keeps nothing (the previous SportLanguages.filter behaviour).
+            applyFilter(resolveSorted(fixture), SportMatchOptions(languages, limit = limit, minPreferred = 1, strict = false))
         }
+
+    /**
+     * Channels that (probably) carry [fixture] under [options]: excluded languages dropped first,
+     * then the preferred languages filtered **before** the [SportMatchOptions.limit] cut (a German
+     * feed naming the clubs only in its EPG *description* scores far below the many
+     * English/Italian title feeds, so a post-cut filter would never see it). In strict mode a
+     * short preferred list stays short — no foreign feed is padded back in.
+     *
+     * Never throws for a malformed playlist or a cold EPG: every DAO call is `runCatching`-guarded
+     * and an empty result simply means "nothing matched".
+     */
+    suspend fun match(fixture: Fixture, options: SportMatchOptions): List<ChannelMatch> =
+        withContext(Dispatchers.IO) {
+            applyFilter(resolveSorted(fixture), options)
+        }
+
+    /**
+     * Discovery (pass 1) + scoring (pass 2), strongest first, unfiltered. Pure IO; both [match]
+     * overloads share it so only the final filter differs.
+     */
+    private suspend fun resolveSorted(fixture: Fixture): List<ChannelMatch> {
+        val sourceIds = sources.liveSourceIds()
+        if (sourceIds.isEmpty()) return emptyList()
+
+        val home = fixture.home
+        val away = fixture.away
+        val teamSport = home != null && away != null
+        // A duel is a VERSUS fixture with two entries and no home/away (tennis singles, MMA).
+        // Doubles carry one "A / B" roster name per side; leaderboards and EVENTs never qualify.
+        val duelSides = fixture.duelSides()
+        val duelSport = !teamSport && duelSides != null
+
+        val from = fixture.dateMs - EpgBeforeMs
+        val to = fixture.dateMs + EpgAfterMs
+
+        // Pass 1 — candidates, from channel names (legacy) and from the guide (new).
+        val candidates = discoverCandidates(fixture, teamSport, duelSport, sourceIds, from, to)
+        if (candidates.isEmpty()) return emptyList()
+        // Pass 2 — score each candidate against the fixture.
+        val homeTokens = home?.scoringTokens().orEmpty()
+        val awayTokens = away?.scoringTokens().orEmpty()
+        val sideATokens = duelSides?.first?.sideTokens().orEmpty()
+        val sideBTokens = duelSides?.second?.sideTokens().orEmpty()
+        val tournamentTokens = fixture.tournamentTokens()
+
+        return candidates.values.mapNotNull { channel ->
+            scoreChannel(
+                channel = channel,
+                fixture = fixture,
+                home = home,
+                away = away,
+                homeTokens = homeTokens,
+                awayTokens = awayTokens,
+                sideATokens = sideATokens,
+                sideBTokens = sideBTokens,
+                tournamentTokens = tournamentTokens,
+                from = from,
+                to = to,
+            )
+        }.sortedByDescending { it.score }
+    }
+
+    /**
+     * The final filter of [SportMatchOptions], always before the cap: exclude first (even exact
+     * per-event channels), then the preferred languages — strict without fallback, legacy with the
+     * full post-exclude list when fewer than [SportMatchOptions.minPreferred] survive.
+     */
+    private fun applyFilter(scored: List<ChannelMatch>, options: SportMatchOptions): List<ChannelMatch> {
+        val limit = options.limit.coerceIn(MinChannelLimit, MaxChannelLimit)
+        if (options.strict) {
+            return SportLanguages.filterStrict(scored, options.languages, options.excludedLanguages).take(limit)
+        }
+        val afterExclude = SportLanguages.filterStrict(scored, emptySet(), options.excludedLanguages)
+        val kept = SportLanguages.filterStrict(afterExclude, options.languages)
+        return (if (kept.size < options.minPreferred) afterExclude else kept).take(limit)
+    }
 
     /** Entities for matched ids, in the matches' order — the zap context for playback. */
     suspend fun channels(ids: List<Long>): List<ChannelEntity> =
@@ -381,10 +453,15 @@ class SportsMatcher(
         var exact = false
         val name = channel.name.lowercase(Locale.ROOT)
         val nameNorm = SportNameMatch.normalize(channel.name)
+        // Youth firewall (symmetric): the marker decides, not the teams. A generic channel name
+        // without a marker still reaches either side through its guide line below.
+        val fixtureYouth = fixture.isYouthFixture()
+        val channelYouth = isYouthText(channel.name)
 
         // --- Channel-name tier (Lume `.channelName`): the name itself names BOTH teams ---
         // ("DAZN 5 | Bayern vs Dortmund"). A one-team name is not enough.
         if (home != null && away != null &&
+            fixtureYouth == channelYouth &&
             homeTokens.any { SportNameMatch.containsWord(it, nameNorm) } &&
             awayTokens.any { SportNameMatch.containsWord(it, nameNorm) }
         ) {
@@ -393,6 +470,7 @@ class SportsMatcher(
         }
         // A duel channel names both athletes ("Khachanov vs De Minaur"); one athlete is not enough.
         if (sideATokens.isNotEmpty() && sideBTokens.isNotEmpty() &&
+            fixtureYouth == channelYouth &&
             sideATokens.any { SportNameMatch.containsWord(it, nameNorm) } &&
             sideBTokens.any { SportNameMatch.containsWord(it, nameNorm) }
         ) {
@@ -427,6 +505,9 @@ class SportsMatcher(
                 val descriptionNorm = SportNameMatch.normalize(
                     programme.description?.take(EpgDescriptionScanChars).orEmpty(),
                 )
+                // Youth firewall (symmetric): a youth line never scores for a senior fixture
+                // and vice versa — checked on the full text, not the truncated scoring slice.
+                if (isYouthText(programme.title + " " + programme.description.orEmpty()) != fixtureYouth) continue
                 val homeInTitle = epgHomeTokens.any { SportNameMatch.containsWord(it, titleNorm) }
                 val awayInTitle = epgAwayTokens.any { SportNameMatch.containsWord(it, titleNorm) }
                 val homeAnywhere = homeInTitle ||
@@ -475,6 +556,8 @@ class SportsMatcher(
                 val descriptionNorm = SportNameMatch.normalize(
                     programme.description?.take(EpgDescriptionScanChars).orEmpty(),
                 )
+                // Youth firewall (symmetric), same as the team tier above.
+                if (isYouthText(programme.title + " " + programme.description.orEmpty()) != fixtureYouth) continue
                 fun anyIn(tokens: List<String>): Boolean =
                     tokens.any { SportNameMatch.containsWord(it, titleNorm) } ||
                         tokens.any { SportNameMatch.containsWord(it, descriptionNorm) }
@@ -522,6 +605,19 @@ class SportsMatcher(
                 // A duel/tournament title only becomes the shown line when no stronger team line won.
                 if (epgTitle == null) epgTitle = bestTitle
             }
+        }
+
+        // --- Region tier (US fixtures): a US-tagged feed sorts above equal foreign evidence ---
+        // College/NFL/… games are US broadcasts; a `US:` feed carrying the same game as a CA/AU/UK
+        // feed is the home feed and wins the tie. Deliberately bonus-only, never a filter or malus:
+        // without a US feed the foreign entries keep the pane non-empty. Applied only to an already
+        // qualifying candidate (`score > 0`), so the bonus can never conjure a match from nothing.
+        // Runs inside pass 2, hence inside the language filter's input — the filter-before-cap order
+        // at the end of `match` is untouched.
+        if (score > 0 && fixture.isUsFixture() &&
+            SportLanguages.countryCodeOf(channel.name) == UsCountryCode
+        ) {
+            score += UsRegionBonus
         }
 
         return if (score > 0) {
@@ -582,9 +678,52 @@ class SportsMatcher(
     /** ESPN marks unknown future opponents "TBD" (often with a negative competitor id). */
     private fun String.isPlaceholderName(): Boolean = trim().equals(PlaceholderName, ignoreCase = true)
 
+    /**
+     * Whether a fixture is a youth game. Checked on the league id plus the tournament/event title
+     * (e.g. a `uefa.youth` league or a "Youth League" tournament); team names are deliberately
+     * excluded — a senior side is never youth-marked by its own name.
+     */
+    private fun Fixture.isYouthFixture(): Boolean =
+        isYouthText(leagueId) || isYouthText(tournament.orEmpty()) || isYouthText(title.orEmpty())
+
+    /**
+     * Whether a text carries a youth marker (`youth`, `jugend` incl. compounds like `Jugendliga`,
+     * or an age grade `u17–u23` in compact or hyphenated form). Checked on the normalized form via
+     * [SportNameMatch], so casing/accents never decide; the hyphenated `u-19` normalizes to
+     * `u 19` and is matched with an optional space.
+     */
+    private fun isYouthText(text: String): Boolean {
+        if (text.isBlank()) return false
+        val norm = SportNameMatch.normalize(text)
+        if (norm.contains(YouthWord) || norm.contains(JugendWord)) return true
+        return YouthAgePattern.containsMatchIn(norm)
+    }
+
+    /**
+     * Whether a fixture is a US-league game (NFL/college football, NBA, MLB, NHL, …) whose home
+     * feeds carry a `US:` tag. Matched on the ESPN league id: any `college` league plus the Big-4
+     * sports count; `basketball.euroleague` is explicitly excluded so European basketball never
+     * prefers US feeds.
+     */
+    private fun Fixture.isUsFixture(): Boolean {
+        if ("college" in leagueId) return true
+        if (leagueId.startsWith("football.") || leagueId.startsWith("baseball.") ||
+            leagueId.startsWith("hockey.")
+        ) {
+            return true
+        }
+        return leagueId.startsWith("basketball.") && leagueId != EuroleagueId
+    }
+
     companion object {
-        /** How many channels one fixture shows. 8 → 12 (Lume) → 20 (room for the language filter). */
-        private const val DefaultLimit = 20
+        /** How many channels one fixture shows (user-settable, see [SportMatchOptions.limit]). */
+        const val DefaultChannelLimit = 20
+        /** Smallest list a fixture shows — below this the language quota could never be met. */
+        const val MinChannelLimit = 5
+        /** Largest list a fixture shows — bounds the TV pane and the preview zap context. */
+        const val MaxChannelLimit = 50
+        /** Preferred-language hits for a list to count as covered (strict mode never pads up to it). */
+        const val MinPreferredCount = 5
         /** Per-query cap for the channel-name search (was 20). */
         private const val MatchSearchLimit = 30
         /**
@@ -625,9 +764,29 @@ class SportsMatcher(
         private const val EpgSingleWithContextScore = 2
         private const val EpgTournamentScore = 1
         private const val SportCategoryScore = 1
+        /**
+         * Region tie-break for US-league games: a `US:`-tagged feed outranks an equally evidenced
+         * foreign feed, but never outranks genuinely stronger evidence (a +10 title hit still beats
+         * a +3 description hit with the bonus). Kept small for exactly that reason.
+         */
+        private const val UsRegionBonus = 2
+        /** Country tag that marks the home feed of a US-league game (see `SportLanguages`). */
+        private const val UsCountryCode = "US"
+        /** European basketball shares the `basketball.` prefix but is not a US league. */
+        private const val EuroleagueId = "basketball.euroleague"
 
         /** Words that give a programme tennis context for the single-athlete recall tier. */
         private val TennisWords = setOf("tennis", "atp", "wta")
+
+        /** Substrings (on normalized text) marking a youth line; compounds included. */
+        private const val YouthWord = "youth"
+        private const val JugendWord = "jugend"
+
+        /**
+         * Age grades on normalized text: compact (`u19`) or hyphenated (`u-19` → `u 19`).
+         * Word-bounded, so `eu23` never matches.
+         */
+        private val YouthAgePattern = Regex("\\bu\\s?(17|18|19|20|21|23)\\b")
 
         /** A doubles roster side separator ("Cash / Glasspool"). */
         private val RosterSplit = Regex("\\s*/\\s*")

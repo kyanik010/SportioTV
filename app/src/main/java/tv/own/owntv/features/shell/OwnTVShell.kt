@@ -372,6 +372,10 @@ fun OwnTVShell(
     val zapChannels by liveVm.zapChannels.collectAsStateWithLifecycle()
     val zapListTitle by liveVm.zapListTitle.collectAsStateWithLifecycle()
     val zapListKey by liveVm.zapListKey.collectAsStateWithLifecycle()
+    // Roadmap point 6: a sport fixture's channels are the zap context — the overlay heading names the
+    // fixture (armed via armSport) and Right opens that list instead of the watch history.
+    val sportZapTitle by liveVm.sportZapTitle.collectAsStateWithLifecycle()
+    val sportZapActive = sportZapTitle != null
     // Favorites and History have no provider name to show — their labels are UI strings, so the overlay
     // used to head both of them "All channels".
     val zapOverlayTitle = zapListTitle ?: when (zapListKey) {
@@ -1316,7 +1320,7 @@ fun OwnTVShell(
                         )
 
                         selectedSection == MainSection.SPORT -> SportsScreen(
-                            onPlayChannel = { id, zap -> scope.launch { if (liveVm.ensurePlayingByIdAsync(id, zap)) openFullscreen(MainSection.LIVE_TV) } },
+                            onPlayChannel = { id, zap, title -> scope.launch { if (liveVm.ensurePlayingSportByIdAsync(id, zap, title)) openFullscreen(MainSection.LIVE_TV) } },
                             onChildFocused = { focusedLayer = ShellLayer.CONTENT },
                             previewEnabled = playerMode == PlayerMode.NONE,
                             restoreFocus = restoreFocus,
@@ -1679,7 +1683,14 @@ fun OwnTVShell(
                         ?.takeIf { recordWatchingEnabled && isTunedLive }
                         ?.let { channel -> { liveVm.togglePlayerRecording(channel) } },
                     recordingThis = playerRecording != null,
-                    onOpenHistoryList = if (isTunedLive) { { showHistoryList = true } } else null,
+                    onOpenHistoryList = when {
+                        !isTunedLive -> null
+                        // Roadmap point 6: in a sport fixture's zap context Right opens the fixture
+                        // channels (same list as Left), not the watch history. One channel = no overlay.
+                        sportZapActive && zapChannels.size > 1 -> { { showChannelList = true } }
+                        !sportZapActive -> { { showHistoryList = true } }
+                        else -> null
+                    },
                     onRewindLive = if (isTunedLive && canRewindLive) liveVm::rewindLive else null,
                     onForwardLive = if (isTunedLive) liveVm::forwardLive else null,
                     onGoToLive = if (isTunedLive) liveVm::goToLive else null,

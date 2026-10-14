@@ -22,6 +22,7 @@
     <string name="sport_loading">Wird geladen…</string>
     <string name="sport_load_failed">Sportdaten konnten nicht geladen werden</string>
     <string name="sport_retry">Erneut versuchen</string>
+    <string name="sport_refresh_channels">Kanäle aktualisieren</string>
     <string name="sport_no_games">Keine Spiele</string>
     <string name="sport_venue">Spielort</string>
     <string name="sport_broadcast">TV</string>
@@ -32,6 +33,9 @@
     <string name="sport_venue_separator">, </string>
     <string name="sport_settings">Sport-Einstellungen</string>
     <string name="sport_settings_leagues">Angezeigte Ligen</string>
+    <string name="sport_settings_tab_leagues">Ligen</string>
+    <string name="sport_settings_tab_channels">Sender</string>
+    <string name="sport_settings_tab_languages">Sprachen</string>
     <string name="sport_add_leagues">Ligen hinzufügen</string>
     <string name="sport_picker_title">Ligen</string>
     <string name="sport_picker_subtitle">Ligen auswählen, die angezeigt und geladen werden</string>
@@ -60,5 +64,28 @@
     <string name="sport_language_spanish">Spanisch</string>
     <string name="sport_language_portuguese">Portugiesisch</string>
     <string name="sport_language_french">Französisch</string>
+    <string name="sport_language_dutch">Niederländisch</string>
+    <string name="sport_language_italian">Italienisch</string>
+    <string name="sport_language_polish">Polnisch</string>
+    <string name="sport_language_turkish">Türkisch</string>
+    <string name="sport_language_arabic">Arabisch</string>
     <string name="sport_language_filter">Sprache: %1$s</string>
+    <string name="sport_channel_limit_title">Kanäle pro Spiel</string>
+    <string name="sport_channel_limit_hint">Mit links und rechts ändern</string>
+    <plurals name="sport_language_quota">
+        <item quantity="one">Mindestens %1$d Kanal in deinen Sprachen, sonst eine kürzere Liste</item>
+        <item quantity="other">Mindestens %1$d Kanäle in deinen Sprachen, sonst eine kürzere Liste</item>
+    </plurals>
+    <string name="sport_exclude_title">Immer ausblenden</string>
+    <string name="sport_exclude_subtitle">Diese Sprachen erscheinen nie, nicht einmal als exakte Event-Kanäle</string>
+    <string name="sport_region_title">Region</string>
+    <string name="sport_region_switch_hint">Links und rechts wechseln die Region</string>
+    <string name="sport_region_cycler_value">‹ %1$s ›</string>
+    <string name="sport_sublevel_chevron">›</string>
+    <string name="sport_preferred_title">Bevorzugte Sprachen</string>
+    <string name="live_language_title">Sprachen</string>
+    <string name="live_language_subtitle">Welche Sprachen soll Live-TV anzeigen?</string>
+    <string name="live_language_all">Alle Sprachen</string>
+    <string name="live_language_other">Sonstige</string>
+    <string name="live_language_filtered">%1$d von %2$d</string>
 </resources>

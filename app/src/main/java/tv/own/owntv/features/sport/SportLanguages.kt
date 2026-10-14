@@ -18,6 +18,11 @@ enum class SportLanguage(@StringRes val labelRes: Int) {
     SPANISH(R.string.sport_language_spanish),
     PORTUGUESE(R.string.sport_language_portuguese),
     FRENCH(R.string.sport_language_french),
+    DUTCH(R.string.sport_language_dutch),
+    ITALIAN(R.string.sport_language_italian),
+    POLISH(R.string.sport_language_polish),
+    TURKISH(R.string.sport_language_turkish),
+    ARABIC(R.string.sport_language_arabic),
 }
 
 /**
@@ -40,6 +45,11 @@ object SportLanguages {
         SportLanguage.SPANISH,
         SportLanguage.PORTUGUESE,
         SportLanguage.FRENCH,
+        SportLanguage.DUTCH,
+        SportLanguage.ITALIAN,
+        SportLanguage.POLISH,
+        SportLanguage.TURKISH,
+        SportLanguage.ARABIC,
     )
 
     /** An empty set means "all languages" — no filter. The default matches the app's audience. */
@@ -77,6 +87,24 @@ object SportLanguages {
         if (languages.isEmpty()) return matches
         val kept = matches.filter { it.isExact || keeps(it.channelName, languages) }
         return kept.ifEmpty { matches }
+    }
+
+    /**
+     * Strict variant of [filter] without the never-empty fallback: excluded languages are dropped
+     * first (an exact per-event channel does NOT survive its language being excluded — excluding is
+     * an explicit "never show", filtering is a preference), then only channels in [languages] are
+     * kept, with exact per-event channels ([ChannelMatch.isExact]) always surviving the preference
+     * step. An empty [languages] means "all" (minus [excluded]). A short list stays short — no
+     * foreign feed is padded back in (see `docs/sport-roadmap.md` Punkt 4, Mindestquote).
+     */
+    fun filterStrict(
+        matches: List<ChannelMatch>,
+        languages: Set<SportLanguage>,
+        excluded: Set<SportLanguage> = emptySet(),
+    ): List<ChannelMatch> {
+        val kept = matches.filterNot { languageOfChannel(it.channelName) in excluded }
+        if (languages.isEmpty()) return kept
+        return kept.filter { it.isExact || keeps(it.channelName, languages) }
     }
 
     private fun keeps(channelName: String, languages: Set<SportLanguage>): Boolean {
@@ -124,5 +152,33 @@ object SportLanguages {
         // French
         "FR" to SportLanguage.FRENCH,
         "BE" to SportLanguage.FRENCH,
+        // Dutch (IPTV convention; "BE" stays French — a Flemish feed needs its own NL tag)
+        "NL" to SportLanguage.DUTCH,
+        // Italian
+        "IT" to SportLanguage.ITALIAN,
+        // Polish
+        "PL" to SportLanguage.POLISH,
+        // Turkish
+        "TR" to SportLanguage.TURKISH,
+        // Arabic (IPTV convention: provider country tags, not ISO-purist; "AR" stays
+        // Argentina/Spanish to avoid breaking the existing ES mapping)
+        "SA" to SportLanguage.ARABIC,
+        "AE" to SportLanguage.ARABIC,
+        "QA" to SportLanguage.ARABIC,
+        "EG" to SportLanguage.ARABIC,
+        "MA" to SportLanguage.ARABIC,
+        "DZ" to SportLanguage.ARABIC,
+        "TN" to SportLanguage.ARABIC,
+        "IQ" to SportLanguage.ARABIC,
+        "JO" to SportLanguage.ARABIC,
+        "KW" to SportLanguage.ARABIC,
+        "BH" to SportLanguage.ARABIC,
+        "OM" to SportLanguage.ARABIC,
+        "LB" to SportLanguage.ARABIC,
+        "LY" to SportLanguage.ARABIC,
+        "SD" to SportLanguage.ARABIC,
+        "YE" to SportLanguage.ARABIC,
+        "SY" to SportLanguage.ARABIC,
+        "PS" to SportLanguage.ARABIC,
     )
 }

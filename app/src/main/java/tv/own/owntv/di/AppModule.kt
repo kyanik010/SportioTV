@@ -102,6 +102,7 @@ val appModule = module {
             get(),
             get(),
             get(),
+            get(),
         )
     }
     viewModelOf(::MovieViewModel)
@@ -160,7 +161,36 @@ val appModule = module {
     viewModelOf(::SubtitleSearchViewModel)
     viewModelOf(::DownloadsViewModel)
     viewModelOf(::RecordingsViewModel)
-    viewModelOf(::EpgViewModel)
+    // 23 constructor parameters — past the highest arity Koin's `*Of` DSL generates (22), same as
+    // SettingsViewModel above. Named arguments: reordering the constructor is safe, and adding a
+    // parameter is a compile error here, not a silently mis-wired dependency at runtime.
+    viewModel {
+        EpgViewModel(
+            settings = get(),
+            sourceRepository = get(),
+            channelDao = get(),
+            epgDao = get(),
+            profileDao = get(),
+            epgRepository = get(),
+            epgSourceStore = get(),
+            connectivity = get(),
+            customize = get(),
+            sourceDao = get(),
+            xtream = get(),
+            favoriteDao = get(),
+            userDataWriter = get(),
+            categoryDao = get(),
+            streamUrlResolver = get(),
+            externalPlayerLauncher = get(),
+            customCategoryDao = get(),
+            recordings = get(),
+            liveEpgReader = get(),
+            epgActivity = get(),
+            historyDao = get(),
+            reminderManager = get(),
+            sportsPrefs = get(),
+        )
+    }
     viewModelOf(::CustomizeViewModel)
     viewModelOf(::CustomizeItemsViewModel)
     viewModelOf(::BackupViewModel)

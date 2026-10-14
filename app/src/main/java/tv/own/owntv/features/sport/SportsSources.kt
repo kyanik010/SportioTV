@@ -1,6 +1,7 @@
 package tv.own.owntv.features.sport
 
 import kotlinx.coroutines.flow.first
+import tv.own.owntv.core.database.entity.SourceEntity
 import tv.own.owntv.core.repository.SourceRepository
 import tv.own.owntv.core.settings.SettingsRepository
 
@@ -37,7 +38,16 @@ class ProfileLiveSourceIdsProvider(
         if (pid < 0) return emptyList()
         val sources = runCatching { sourceRepository.observeSources(pid).first() }.getOrNull().orEmpty()
         val defaultId = runCatching { settings.defaultSourceId.first() }.getOrDefault(-1L)
-        val scoped = if (defaultId > 0) sources.filter { it.id == defaultId } else sources
-        return scoped.filter { it.syncLive }.map { it.id }
+        return scopeLiveSourceIds(sources, defaultId)
     }
+}
+
+/**
+ * The profile's live playlists as ids: narrowed to [defaultId] when one is set (the source
+ * switcher top-right), then to those with live sync enabled. Pure, so the sport hub's
+ * source-change observer and unit tests share exactly this logic with the provider above.
+ */
+fun scopeLiveSourceIds(sources: List<SourceEntity>, defaultId: Long): List<Long> {
+    val scoped = if (defaultId > 0) sources.filter { it.id == defaultId } else sources
+    return scoped.filter { it.syncLive }.map { it.id }
 }

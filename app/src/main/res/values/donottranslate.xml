@@ -76,6 +76,7 @@
     <string name="sport_league_football_college_football" translatable="false">NCAA Football</string>
     <string name="sport_league_baseball_college_baseball" translatable="false">NCAA Baseball</string>
     <string name="sport_league_australian_football_afl" translatable="false">AFL</string>
+    <string name="sport_league_rugby_league_3" translatable="false">NRL</string>
     <string name="sport_league_rugby_270557" translatable="false">United Rugby Championship</string>
     <string name="sport_league_volleyball_womens_college_volleyball" translatable="false">NCAA Women\'s Volleyball</string>
     <string name="sport_league_golf_lpga" translatable="false">LPGA</string>

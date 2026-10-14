@@ -107,6 +107,20 @@ class SportNameMatchTest {
     }
 
     @Test
+    fun collegeAliasesResolveCaseInsensitively() {
+        val vocab = SportsVocab.of(mapOf("Ohio State Buckeyes" to listOf("Ohio State", "OSU")))
+        assertEquals(listOf("Ohio State", "OSU"), vocab.aliasesFor(listOf("ohio state buckeyes")))
+    }
+
+    @Test
+    fun ampersandAliasTokenizesCleanly() {
+        assertEquals(
+            setOf("texas", "aggies"),
+            SportNameMatch.tokensForName("Texas A&M Aggies", emptySet()),
+        )
+    }
+
+    @Test
     fun unknownNamesYieldNoAliases() {
         assertTrue(SportsVocab.of(emptyMap()).aliasesFor(listOf("Some Unknown Club")).isEmpty())
         assertTrue(SportsVocab.EMPTY.aliasesFor(listOf("Bayern Munich")).isEmpty())

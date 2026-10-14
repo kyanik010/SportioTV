@@ -673,6 +673,15 @@ val SportsLeagues: List<SportLeague> = listOf(
         defaultActive = false,
     ),
     SportLeague(
+        id = "rugby-league.3",
+        espnSport = "rugby-league",
+        espnLeague = "3",
+        labelRes = R.string.sport_league_rugby_league_3,
+        region = LeagueRegion.REST,
+        kind = LeagueKind.TEAMS,
+        defaultActive = false,
+    ),
+    SportLeague(
         id = "rugby.270557",
         espnSport = "rugby",
         espnLeague = "270557",

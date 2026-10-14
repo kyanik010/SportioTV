@@ -264,4 +264,41 @@ class LiveZapListTest {
         h.releaseWindow = false
         h.stop()
     }
+
+    @Test
+    fun `arming a sport fixture marks the sport context and keeps the fixture list`() {
+        val h = Harness()
+        h.zap.armSport(list, "BAY vs BVB")
+        assertEquals(list, h.zap.channels.value)
+        assertEquals("BAY vs BVB", h.zap.title.value)
+        assertEquals("BAY vs BVB", h.zap.sportTitle.value)
+        assertTrue(h.zap.canZap.value)
+        h.playing = 2
+        assertEquals(3L, h.zap.next(1)?.id)
+        h.stop()
+    }
+
+    @Test
+    fun `a single sport channel arms no zappable context`() {
+        val h = Harness()
+        h.zap.armSport(list.take(1), "BAY vs BVB")
+        assertEquals("BAY vs BVB", h.zap.sportTitle.value)
+        assertFalse(h.zap.canZap.value)
+        h.playing = 1
+        assertNull(h.zap.next(1))
+        h.stop()
+    }
+
+    @Test
+    fun `any other arming path clears the sport context`() {
+        val h = Harness(category = list)
+        h.zap.armSport(list, "BAY vs BVB")
+        assertEquals("BAY vs BVB", h.zap.sportTitle.value)
+        h.zap.armFromBrowse(list, title = "Favorites", key = LiveKey.Favorites, categoryId = null)
+        assertNull(h.zap.sportTitle.value)
+        h.zap.armSport(list, "BAY vs BVB")
+        h.zap.armFor(channel(2))
+        h.await("the provider category") { h.zap.sportTitle.value == null }
+        h.stop()
+    }
 }

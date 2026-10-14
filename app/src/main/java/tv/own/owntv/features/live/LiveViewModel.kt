@@ -81,6 +81,7 @@ import tv.own.owntv.core.parser.XtreamClient
 import tv.own.owntv.core.repository.activeProfileSources
 import tv.own.owntv.core.settings.SourceOverrides
 import tv.own.owntv.core.settings.SettingsRepository
+import tv.own.owntv.features.sport.SportsPrefs
 import tv.own.owntv.player.LiveExoWatchdog
 import tv.own.owntv.player.LiveProgramme
 import tv.own.owntv.player.OwnTVPlayer
@@ -134,6 +135,7 @@ class LiveViewModel(
     private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
     private val externalPlayerLauncher: tv.own.owntv.core.player.ExternalPlayerLauncher,
     private val recordings: tv.own.owntv.core.recording.RecordingManager,
+    private val sportsPrefs: SportsPrefs,
 ) : ViewModel() {
 
     // --- "Record what I'm watching" (Plan D, D3 mode b) -----------------------------------------
@@ -339,6 +341,99 @@ class LiveViewModel(
             else aps.sources.withIndex().associate { (i, s) -> s.id to tv.own.owntv.ui.stage.PlaylistMark.of(s.name, i) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    private val languageScanTick = MutableStateFlow(0)
+
+    /**
+     * Live-TV broadcast languages the user switched off (roadmap point 7). Empty = everything on.
+     * Applied to the browse list and the guide; the Sport matcher keeps its own preferred
+     * languages and is untouched.
+     */
+    val liveExcludedLanguages: StateFlow<Set<String>> = sportsPrefs.liveExcludedLanguages
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** Whether tagless/unmapped ("Other") channels stay visible in Live TV. */
+    val liveShowOther: StateFlow<Boolean> = sportsPrefs.liveShowOther
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /**
+     * Provider group names by category id — resolves a channel's group tag for the language filter
+     * (real playlists tag the groups, e.g. "NL| …", not the channel names). Observed, so a resync
+     * that renames groups reaches the filter without a restart; read as a snapshot wherever the
+     * filter runs.
+     */
+    private val liveCategoryNames: StateFlow<Map<Long, String>> = ctx
+        .flatMapLatest { c ->
+            if (c.profileId < 0) flowOf(emptyMap())
+            else categoryDao.observe(c.sourceIds, MediaType.LIVE).map { cats ->
+                cats.associate { it.id to it.name }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** The cached scan rows behind [liveLanguageOptions] and [liveVisibleCounts] — one bounded
+     *  query per profile-source set, refreshed via [refreshLiveLanguages], never per frame and
+     *  never during sync. */
+    private val liveScanRows: Flow<List<ChannelEntity>> = combine(ctx, languageScanTick) { c, _ -> c }
+        .flatMapLatest { c ->
+            if (c.profileId < 0 || c.sourceIds.isEmpty()) flowOf(emptyList())
+            else flow {
+                val rows = withContext(Dispatchers.IO) {
+                    runCatching { channelDao.allForSources(c.sourceIds, LIVE_LANGUAGE_SCAN_LIMIT) }
+                        .getOrDefault(emptyList())
+                }
+                emit(rows)
+            }
+        }
+
+    /**
+     * The language keys the playlist actually contains ([LiveLanguages.availableKeysWithGroups]).
+     * Group-aware: a channel in a tagged group counts toward that group's language even when its
+     * own name has no tag. Recomputed when the scan reruns or groups rename — still cached, never
+     * per frame. Bounded ([LIVE_LANGUAGE_SCAN_LIMIT] rows) so a huge playlist cannot stall the
+     * list; the scan must never slow the sync, hence IO + runCatching.
+     */
+    val liveLanguageOptions: StateFlow<Set<String>> = combine(liveScanRows, liveCategoryNames) { rows, groups ->
+        LiveLanguages.availableKeysWithGroups(rows.map { LiveLanguages.ScanEntry(it.name, it.categoryId?.let(groups::get)) })
+    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Re-run the cached language scan (fresh country tags after a playlist sync). */
+    fun refreshLiveLanguages() {
+        languageScanTick.value++
+    }
+
+    /**
+     * Visible-channel counts per category id from the cached scan ([liveScanRows] + the group-tag
+     * filter) — the category rail's filtered counters (roadmap point 7). Null while the filter is
+     * off, so the rail keeps its database counts untouched; non-null hides every group missing
+     * from the map (zero visible channels) and recounts the rest. Reuses the scan rows, so no
+     * extra query and no sync slowdown — and no core DAO change for an app-side setting. Bounded
+     * by [LIVE_LANGUAGE_SCAN_LIMIT] like the scan itself.
+     */
+    val liveVisibleCounts: StateFlow<Map<Long, Int>?> =
+        combine(liveScanRows, liveCategoryNames, liveExcludedLanguages, liveShowOther) { rows, groups, excluded, showOther ->
+            if (excluded.isEmpty() && showOther) null
+            else {
+                val counts = HashMap<Long, Int>()
+                for (ch in rows) {
+                    val id = ch.categoryId ?: continue
+                    if (LiveLanguages.isVisible(ch.name, id.let(groups::get), excluded, showOther)) {
+                        counts[id] = (counts[id] ?: 0) + 1
+                    }
+                }
+                counts.filterValues { it > 0 }
+            }
+        }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setLiveExcludedLanguages(excluded: Set<String>) {
+        viewModelScope.launch { sportsPrefs.setLiveExcludedLanguages(excluded) }
+    }
+
+    fun setLiveShowOther(show: Boolean) {
+        viewModelScope.launch { sportsPrefs.setLiveShowOther(show) }
+    }
 
     private val folderContextKeys: StateFlow<Map<Long, String>> = ctx
         .flatMapLatest { c ->
@@ -620,21 +715,37 @@ class LiveViewModel(
         sortMode,
         custResolved,
     ) { key, c, query, sort, cs -> Args(key, c, query, sort, cs) }
+        // Language prefs ride a separate two-flow combine: this coroutines version has no 7-flow
+        // overload, and a nested combine keeps the base five readable.
+        .combine(combine(liveExcludedLanguages, liveShowOther) { excluded, showOther -> excluded to showOther }) { args, lang ->
+            args.copy(excluded = lang.first, showOther = lang.second)
+        }
         // Rebuild the pager when a folder gains/loses manual order (C3): the fast-path plain
         // PagingSource doesn't observe content_order, so the switch must recreate it.
         .combine(orderedContexts) { args, _ -> args }
-        .flatMapLatest { (key, c, query, sort, cs) ->
+        // Group names ride along so the language filter resolves each channel's group tag without
+        // a query per page (snapshot at pager build; a resync rebuilds the pager via the scan tick).
+        .combine(liveCategoryNames) { args, groups -> args.copy(groups = groups) }
+        .flatMapLatest { (key, c, query, sort, cs, excluded, showOther, groups) ->
             // Customizations are applied to each fresh PagingData inside the pager chain — a PagingData
             // that the UI already collected must never be re-transformed (Paging forbids re-collection,
             // which is why hiding a channel used to crash). A customization change re-creates the pager.
             Pager(PagingConfig(pageSize = 80, prefetchDistance = 40, initialLoadSize = 120, maxSize = 400)) {
                 pagingSource(key, c, query, sort)
             }.flow.map { paging ->
+                // Roadmap point 7: language filter inside the pager chain, on the provider (stored)
+                // name so a user rename cannot move a channel into "Other". Group-aware: the
+                // channel's provider group tag wins, its own name tag is the fallback — real
+                // playlists tag the groups, not the channels. Order-preserving, so the SQL sort
+                // stands; a SQL-level filter would need a core DAO change for an app-side
+                // setting and is deliberately not done here.
+                val langFiltered = if (excluded.isEmpty() && showOther) paging
+                else paging.filter { ch -> LiveLanguages.isVisible(ch.name, ch.categoryId?.let(groups::get), excluded, showOther) }
                 val cust = cs.cust
                 val hiddenCats = cs.hiddenCats
                 val movedFrom = cust.movedFromOrigin
-                if (cust.hiddenItems.isEmpty() && cust.itemNames.isEmpty() && hiddenCats.isEmpty() && movedFrom.isEmpty()) paging
-                else paging
+                if (cust.hiddenItems.isEmpty() && cust.itemNames.isEmpty() && hiddenCats.isEmpty() && movedFrom.isEmpty()) langFiltered
+                else langFiltered
                     .filter { ch ->
                         isChannelVisible(ch, cust, hiddenCats, key) &&
                             // Moved-out items leave ONLY their origin folder (they stay in All/search).
@@ -647,7 +758,7 @@ class LiveViewModel(
         }
         .cachedIn(viewModelScope)
 
-    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode, val cs: CustState)
+    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode, val cs: CustState, val excluded: Set<String> = emptySet(), val showOther: Boolean = true, val groups: Map<Long, String> = emptyMap())
 
     /** Hide the focused channel from all lists (undo via Settings → Customize → Hidden channels). */
     fun hideChannel(channel: ChannelEntity) {
@@ -1047,6 +1158,8 @@ class LiveViewModel(
     val zapChannels: StateFlow<List<ChannelEntity>> = zapList.channels
     val zapListTitle: StateFlow<String?> = zapList.title
     val zapListKey: StateFlow<LiveKey?> = zapList.key
+    /** Non-null while the player zaps within a sport fixture's channels (roadmap point 6). */
+    val sportZapTitle: StateFlow<String?> = zapList.sportTitle
 
     // --- Category browser (second Left press shows all categories) ---
     /** The categories' search text. Here, not in the list, so it survives the player: the browse UI
@@ -1566,6 +1679,18 @@ class LiveViewModel(
         } else {
             zapList.armFromBrowse(zapChannels, title = null, key = null, categoryId = null)
         }
+        ensurePlaying(channel)
+        return true
+    }
+
+    /** Open a sport fixture's matched channel (roadmap point 6): the fixture list becomes the zap
+     *  context (CH± steps through it, Left/Right open it as the overlay) and [title] heads that
+     *  overlay. A one-channel list arms a one-channel context, so no overlay opens for it
+     *  ([canZap] stays false). */
+    suspend fun ensurePlayingSportByIdAsync(channelId: Long, zapChannels: List<ChannelEntity>, title: String?): Boolean {
+        val channel = channelDao.getById(channelId) ?: return false
+        val list = zapChannels.ifEmpty { listOf(channel) }
+        zapList.armSport(if (list.any { it.id == channel.id }) list else list + channel, title)
         ensurePlaying(channel)
         return true
     }
@@ -2114,6 +2239,8 @@ class LiveViewModel(
          *  deliberate step still feels immediate. */
         const val ZAP_TUNE_DELAY_MS = 500L
         const val HISTORY_LIST_LIMIT = 30
+        // Language-scan cap: names only, but a huge playlist must not be materialised unbounded.
+        const val LIVE_LANGUAGE_SCAN_LIMIT = 20_000
         val defaultRail = listOf(
             LiveRailItem(LiveKey.Favorites, icon = OwnTVIcon.FAVORITE),
             LiveRailItem(LiveKey.History, icon = OwnTVIcon.HISTORY),

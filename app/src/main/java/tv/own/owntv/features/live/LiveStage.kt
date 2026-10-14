@@ -125,7 +125,8 @@ internal fun LiveHeader(category: String, count: Int, showChevron: Boolean, modi
 
 /**
  * `.chrow`: 84 high, 20 padding, 18 gap — number (50, right-aligned, 20/600 dim), white logo plate
- * 76×54, name 22/700, "programme · time left" 17 muted (the time part at 60%), a 300×4 progress line;
+ * 76×54, the country badge from the channel-name tag (none when untagged), name 22/700,
+ * "programme · time left" 17 muted (the time part at 60%), a 300×4 progress line;
  * then the provider tags, ↺ for catch-up, ♥ when a favourite, and the playlist mark. Focused = FX.
  * [trailing] replaces that end group (the player's History sheet shows when each was watched).
  */
@@ -160,6 +161,10 @@ internal fun LiveStageRow(
             )
         }
         LivePlate(channel.displayLogoUrl, 76.mpx, 54.mpx)
+        // The country tag the provider put at the start of the channel name ("DE:", "UK|", "FR/"),
+        // as a text badge right after the logo plate; untagged channels show none.
+        val countryBadge = remember(channel.name, name.country) { ProviderTags.channelCountry(channel.name, name) }
+        countryBadge?.let { StageTag(it) }
         Column(Modifier.weight(1f)) {
             Text(name.name, style = stageText(22, 700), color = if (focused) StageColors.FxText else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val title = now?.title ?: nowTitle
@@ -402,17 +407,30 @@ internal data class LiveCategoryEntry(
     val icon: OwnTVIcon?,
     val count: Int?,
     val mark: PlaylistMark?,
+    /** The country badge from the group name (`ProviderTags.channelCountry`); null when untagged. */
+    val country: String? = null,
 )
 
 /**
  * Live TV's category list as the sheet and column draw it — the fixed entries with their icons, the
  * provider groups parsed into name and tags — and the "GROUPS · DE" heading above the groups. The TV
  * Guide's category sheet is this same list (P4-03).
+ *
+ * [visibleCounts] carries the language filter (roadmap point 7, null = filter off): provider
+ * groups with zero visible channels are dropped and the rest are recounted to their visible
+ * channels. Fixed entries (All, Favorites, …) and custom categories are never hidden — only
+ * provider folders come from tagged groups.
  */
 @Composable
-internal fun liveCategoryEntries(railItems: List<LiveRailItem>, railCounts: Map<tv.own.owntv.core.live.LiveKey, Int>): Pair<List<LiveCategoryEntry>, String> {
+internal fun liveCategoryEntries(
+    railItems: List<LiveRailItem>,
+    railCounts: Map<tv.own.owntv.core.live.LiveKey, Int>,
+    visibleCounts: Map<Long, Int>? = null,
+): Pair<List<LiveCategoryEntry>, String> {
     val recentLabel = stringResource(R.string.content_category_recently_watched)
-    val entries = railItems.map { item ->
+    val entries = railItems.mapNotNull { item ->
+        val folderId = (item.key as? tv.own.owntv.core.live.LiveKey.Folder)?.id
+        if (visibleCounts != null && folderId != null && (visibleCounts[folderId] ?: 0) <= 0) return@mapNotNull null
         val label = if (item.key == tv.own.owntv.core.live.LiveKey.History) recentLabel else item.displayLabel()
         val parsed = if (item.key is tv.own.owntv.core.live.LiveKey.Folder || item.key is tv.own.owntv.core.live.LiveKey.Custom) ProviderTags.parse(label) else null
         LiveCategoryEntry(
@@ -426,8 +444,11 @@ internal fun liveCategoryEntries(railItems: List<LiveRailItem>, railCounts: Map<
                 tv.own.owntv.core.live.LiveKey.All -> OwnTVIcon.LIVE_TV
                 else -> null
             },
-            count = railCounts[item.key],
+            count = if (folderId != null && visibleCounts != null) visibleCounts[folderId] else railCounts[item.key],
             mark = null,
+            // One badge per group row, so mixed-country groups show each row's own land; the
+            // "GROUPS · DE" heading above stays as it is.
+            country = parsed?.let { ProviderTags.channelCountry(label, it) },
         )
     }
     val groupCountry = ProviderTags.sharedCountry(entries.mapNotNull { it.name })
@@ -599,8 +620,9 @@ internal fun LiveCategories(
                             count = entry.count?.let { tv.own.owntv.ui.components.formatCount(it) },
                             selected = selected,
                             maxLines = 2,
-                            tags = if (entry.name?.tags.isNullOrEmpty()) null else { focused ->
-                                entry.name.tags.forEach { StageTag(it, onAccent = if (focused) a.onAccent else null) }
+                            tags = if (entry.name?.tags.isNullOrEmpty() && entry.country == null) null else { focused ->
+                                entry.country?.let { StageTag(it, onAccent = if (focused) a.onAccent else null) }
+                                entry.name?.tags?.forEach { StageTag(it, onAccent = if (focused) a.onAccent else null) }
                             },
                             trailing = entry.mark?.let { m -> { _ -> StagePlaylistMark(m) } },
                             onLongClick = { onLongSelect(index) },
@@ -618,8 +640,8 @@ internal fun LiveCategories(
 
 /**
  * `.fcat` (the Separate column): 52 high, radius 15, 18.5/600, gap 12, 2 px between rows; the
- * selected one is accent text with the 4 px glowing bar at its left edge; one tag, the count 15/700
- * dim, and the playlist's 7 px dot. Focused = FILLED.
+ * selected one is accent text with the 4 px glowing bar at its left edge; the country badge and one
+ * tag, the count 15/700 dim, and the playlist's 7 px dot. Focused = FILLED.
  */
 @Composable
 private fun LiveColumnItem(
@@ -652,7 +674,11 @@ private fun LiveColumnItem(
                 )
                 // Tags on their own line, so a long name is never cut for them (owner, 2026-09-30).
                 val tags = entry.name?.tags.orEmpty()
-                if (tags.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.mpx)) { tags.forEach { StageTag(it, onAccent = on) } }
+                val country = entry.country
+                if (country != null || tags.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.mpx)) {
+                    country?.let { StageTag(it, onAccent = on) }
+                    tags.forEach { StageTag(it, onAccent = on) }
+                }
             }
             entry.count?.let { Text(tv.own.owntv.ui.components.formatCount(it), style = stageText(15, 700), color = on ?: StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             entry.mark?.let { m -> Box(Modifier.size(7.mpx).background(m.shownColor, RoundedCornerShape(50))) }

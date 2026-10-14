@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class) // flatMapLatest for the source observer
+
 package tv.own.owntv.features.sport
 
 import androidx.lifecycle.ViewModel
@@ -10,6 +12,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -17,6 +23,8 @@ import kotlinx.coroutines.supervisorScope
 import tv.own.owntv.core.companion.CompanionController
 import tv.own.owntv.core.companion.CompanionSelectItem
 import tv.own.owntv.core.companion.CompanionServerState
+import tv.own.owntv.core.repository.SourceRepository
+import tv.own.owntv.core.settings.SettingsRepository
 
 /**
  * Sports hub state: ESPN boards per league (cached 15 minutes), the active-league set, follow sets,
@@ -32,6 +40,8 @@ class SportsViewModel(
     private val api: EspnApi,
     private val matcher: SportsMatcher,
     private val companion: CompanionController,
+    private val settings: SettingsRepository,
+    private val sourceRepository: SourceRepository,
 ) : ViewModel() {
 
     sealed interface BoardState {
@@ -74,6 +84,20 @@ class SportsViewModel(
     val preferredLanguages: StateFlow<Set<SportLanguage>> = prefs.preferredLanguages
         .map { names -> names.mapNotNull { runCatching { SportLanguage.valueOf(it) }.getOrNull() }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SportLanguages.default)
+
+    /** How many channels one fixture lists (5–50, default 20); changes apply without restart. */
+    val channelLimit: StateFlow<Int> = prefs.channelLimit
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SportsMatcher.DefaultChannelLimit)
+
+    /** Languages never shown in a fixture's channel list — a hard "never", even for exact hits. */
+    val excludedLanguages: StateFlow<Set<SportLanguage>> = prefs.excludedLanguages
+        .map { names -> names.mapNotNull { runCatching { SportLanguage.valueOf(it) }.getOrNull() }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** True unless the user switched the language filter to its legacy never-empty fallback. */
+    val languageFilterStrict: StateFlow<Boolean> = prefs.languageFilterMode
+        .map { it != SportsPrefs.FilterModeLegacy }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     /** True once the language prompt was answered (or dismissed); it is shown at most once. */
     val languageAsked: StateFlow<Boolean> = prefs.languageAsked
@@ -195,6 +219,19 @@ class SportsViewModel(
             }
         }
         viewModelScope.launch { currentFixtures.collect { applyDefaultTab() } }
+        // The matcher reads the live playlists fresh on every match call, but the matches are
+        // cached per fixture — so a source switcher change (defaultSourceId, top-right) or any
+        // source-list change would otherwise leave stale matches standing. Observe the same
+        // scoped id list the provider computes and re-resolve the selected fixture on change.
+        // No boards reload (fixtures are source-independent), no polling, no preview touch.
+        viewModelScope.launch {
+            settings.activeProfileId.flatMapLatest { pid ->
+                if (pid < 0) flowOf(emptyList())
+                else combine(sourceRepository.observeSources(pid), settings.defaultSourceId) { sources, defaultId ->
+                    scopeLiveSourceIds(sources, defaultId)
+                }
+            }.distinctUntilChanged().drop(1).collect { reResolveSelected() }
+        }
     }
 
     fun setTab(tab: FixtureTab) {
@@ -290,7 +327,7 @@ class SportsViewModel(
         }
         _matches.value = MatchesState.Loading
         viewModelScope.launch {
-            val found = runCatching { matcher.match(fixture, preferredLanguages.value) }.getOrDefault(emptyList())
+            val found = runCatching { matcher.match(fixture, matchOptions()) }.getOrDefault(emptyList())
             matchesCache[fixture.id] = found
             if (_selectedFixture.value?.id == fixture.id) _matches.value = MatchesState.Content(found)
         }
@@ -342,15 +379,53 @@ class SportsViewModel(
     fun setPreferredLanguages(languages: Set<SportLanguage>) {
         viewModelScope.launch {
             prefs.setPreferredLanguages(languages.map { it.name }.toSet())
-            // Matches are language-filtered inside the matcher, so the cache is only valid for the
-            // languages it was built with — drop it and re-resolve the selected fixture.
-            matchesCache.clear()
-            val fixture = _selectedFixture.value ?: return@launch
-            _matches.value = MatchesState.Loading
-            val found = runCatching { matcher.match(fixture, languages) }.getOrDefault(emptyList())
-            matchesCache[fixture.id] = found
-            if (_selectedFixture.value?.id == fixture.id) _matches.value = MatchesState.Content(found)
+            // The prefs flow may lag the write, so re-resolve with the just-picked value directly.
+            reResolveSelected(matchOptions().copy(languages = languages))
         }
+    }
+
+    /** How many channels one fixture lists (5–50); the selected fixture re-resolves at once. */
+    fun setChannelLimit(limit: Int) {
+        viewModelScope.launch {
+            prefs.setChannelLimit(limit)
+            reResolveSelected(matchOptions().copy(limit = limit))
+        }
+    }
+
+    /** Toggle one excluded language; the selected fixture re-resolves at once. */
+    fun toggleExcludedLanguage(language: SportLanguage) {
+        viewModelScope.launch {
+            val current = excludedLanguages.value
+            val next = if (language in current) current - language else current + language
+            prefs.setExcludedLanguages(next.map { it.name }.toSet())
+            reResolveSelected(matchOptions().copy(excludedLanguages = next))
+        }
+    }
+
+    /** The matcher's filter from the current prefs — one place, so every setter re-resolves alike. */
+    private fun matchOptions(): SportMatchOptions = SportMatchOptions(
+        languages = preferredLanguages.value,
+        excludedLanguages = excludedLanguages.value,
+        limit = channelLimit.value,
+        strict = languageFilterStrict.value,
+    )
+
+    /** Drop the cached channels and match the selected fixture again (per-game refresh button). */
+    fun refreshMatches() {
+        viewModelScope.launch { reResolveSelected() }
+    }
+
+    /**
+     * Matches are language-filtered inside the matcher, so the cache is only valid for the options
+     * it was built with — drop it and re-resolve the selected fixture.
+     */
+    private suspend fun reResolveSelected(options: SportMatchOptions = matchOptions()) {
+        matchesCache.clear()
+        val fixture = _selectedFixture.value ?: return
+        _matches.value = MatchesState.Loading
+        val found = runCatching { matcher.match(fixture, options) }.getOrDefault(emptyList())
+        matchesCache[fixture.id] = found
+        if (_selectedFixture.value?.id == fixture.id) _matches.value = MatchesState.Content(found)
     }
 
     /** Remember that the language prompt was shown, so it does not reappear on the next fixture. */

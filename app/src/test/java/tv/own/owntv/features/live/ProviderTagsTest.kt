@@ -50,4 +50,32 @@ class ProviderTagsTest {
     fun noSharedCountryWhenOneHasNone() = assertNull(
         ProviderTags.sharedCountry(listOf(ProviderTags.parse("DE| A"), ProviderTags.parse("B"))),
     )
+
+    @Test
+    fun channelCountryUsesPipePrefix() =
+        assertEquals("DE", ProviderTags.channelCountry("DE| Sky Cinema Premieren ᴴᴰ"))
+
+    @Test
+    fun channelCountryAllowsThreeLetterPipePrefix() =
+        assertEquals("USA", ProviderTags.channelCountry("USA| Fox Sports"))
+
+    @Test
+    fun channelCountryFallsBackToColonForm() =
+        assertEquals("DE", ProviderTags.channelCountry("DE: SKY SPORT BUNDESLIGA 1 HD"))
+
+    @Test
+    fun channelCountryFallsBackToSlashForm() =
+        assertEquals("FR", ProviderTags.channelCountry("FR/CANAL+ SPORT"))
+
+    @Test
+    fun channelCountryIsNullWhenUntagged() =
+        assertNull(ProviderTags.channelCountry("Sky Cinema"))
+
+    @Test
+    fun channelCountryIgnoresBarInsideName() =
+        assertNull(ProviderTags.channelCountry("Sky | Cinema"))
+
+    @Test
+    fun channelCountryReusesGivenParse() =
+        assertEquals("UK", ProviderTags.channelCountry("UK| Sport", ProviderTags.parse("UK| Sport")))
 }

@@ -3,6 +3,8 @@ package tv.own.owntv.features.sport
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +43,43 @@ class SportsPrefs(private val context: Context) {
     /** True once the user has been asked for a language (or picked channels); the prompt never nags. */
     val languageAsked: Flow<Boolean> =
         context.sportsDataStore.data.map { it[LanguageAskedKey] ?: false }
+
+    /**
+     * Live-TV broadcast languages the user switched OFF, as [SportLanguage] names (roadmap point 7).
+     * Empty means "everything on", so a newly scanned playlist language appears enabled. Stored in
+     * this same `sports` file rather than core `SettingsRepository`: Live TV is owned by the app, a
+     * core key would need a core-repo change and release for a purely app-side filter. Single
+     * source — no duplicate state. The Sport matcher's own preferred languages stay untouched.
+     */
+    val liveExcludedLanguages: Flow<Set<String>> =
+        context.sportsDataStore.data.map { it[LiveExcludedKey].orEmpty() }
+
+    /** Whether tagless/unmapped ("Other") channels stay visible in Live TV. Default on. */
+    val liveShowOther: Flow<Boolean> =
+        context.sportsDataStore.data.map { it[LiveOtherKey] ?: true }
+
+    /**
+     * How many channels one fixture lists (clamped to [MinChannelLimit] .. [MaxChannelLimit] on
+     * every read, so an old or hand-edited value can never break the pane).
+     */
+    val channelLimit: Flow<Int> =
+        context.sportsDataStore.data.map { (it[ChannelLimitKey] ?: DefaultChannelLimit).coerceIn(MinChannelLimit, MaxChannelLimit) }
+
+    /**
+     * Languages never shown in a fixture's channel list, as [SportLanguage] names. Unlike the
+     * preferred languages this is a hard "never" — even an exact per-event channel in an excluded
+     * language is dropped (see `SportLanguages.filterStrict`).
+     */
+    val excludedLanguages: Flow<Set<String>> =
+        context.sportsDataStore.data.map { it[ExcludedLanguagesKey].orEmpty() }
+
+    /**
+     * How the language filter falls back: `strict` (default) keeps a short preferred list short,
+     * `legacy` returns the full list when fewer than [SportsMatcher.MinPreferredCount] preferred
+     * channels survive. Any unknown value reads as strict.
+     */
+    val languageFilterMode: Flow<String> =
+        context.sportsDataStore.data.map { it[LanguageFilterModeKey] ?: FilterModeStrict }
 
     suspend fun setLeagueFollowed(leagueId: String, followed: Boolean) {
         context.sportsDataStore.edit { prefs ->
@@ -95,6 +134,33 @@ class SportsPrefs(private val context: Context) {
         context.sportsDataStore.edit { prefs -> prefs[LanguageAskedKey] = true }
     }
 
+    /** Switch Live-TV broadcast languages off (empty = everything on). */
+    suspend fun setLiveExcludedLanguages(names: Set<String>) {
+        context.sportsDataStore.edit { prefs -> prefs[LiveExcludedKey] = names }
+    }
+
+    /** Show or hide tagless/unmapped ("Other") channels in Live TV. */
+    suspend fun setLiveShowOther(show: Boolean) {
+        context.sportsDataStore.edit { prefs -> prefs[LiveOtherKey] = show }
+    }
+
+    /** How many channels one fixture lists; clamped to [MinChannelLimit] .. [MaxChannelLimit]. */
+    suspend fun setChannelLimit(limit: Int) {
+        context.sportsDataStore.edit { prefs ->
+            prefs[ChannelLimitKey] = limit.coerceIn(MinChannelLimit, MaxChannelLimit)
+        }
+    }
+
+    /** Replace the excluded channel languages; empty = nothing excluded. */
+    suspend fun setExcludedLanguages(names: Set<String>) {
+        context.sportsDataStore.edit { prefs -> prefs[ExcludedLanguagesKey] = names }
+    }
+
+    /** Strict (default) or legacy language-filter fallback; unknown values read back as strict. */
+    suspend fun setLanguageFilterMode(mode: String) {
+        context.sportsDataStore.edit { prefs -> prefs[LanguageFilterModeKey] = mode }
+    }
+
     companion object {
         fun teamKey(leagueId: String, teamAbbrev: String): String = leagueId + TeamSeparator + teamAbbrev
 
@@ -107,7 +173,19 @@ class SportsPrefs(private val context: Context) {
         private val VisibleKey = booleanPreferencesKey("hub_visible")
         private val LanguagesKey = stringSetPreferencesKey("preferred_languages")
         private val LanguageAskedKey = booleanPreferencesKey("language_asked")
+        private val LiveExcludedKey = stringSetPreferencesKey("live_excluded_languages")
+        private val LiveOtherKey = booleanPreferencesKey("live_show_other")
+        private val ChannelLimitKey = intPreferencesKey("channel_limit")
+        private val ExcludedLanguagesKey = stringSetPreferencesKey("excluded_languages")
+        private val LanguageFilterModeKey = stringPreferencesKey("language_filter_mode")
         private val DefaultLanguageNames = setOf(SportLanguage.GERMAN.name)
         private const val TeamSeparator = "|"
+        /** Strict filter: a short preferred list stays short, never padded with foreign feeds. */
+        const val FilterModeStrict = "strict"
+        /** Legacy filter: full list when fewer than the minimum preferred channels survive. */
+        const val FilterModeLegacy = "legacy"
+        const val DefaultChannelLimit = SportsMatcher.DefaultChannelLimit
+        const val MinChannelLimit = SportsMatcher.MinChannelLimit
+        const val MaxChannelLimit = SportsMatcher.MaxChannelLimit
     }
 }

@@ -28,10 +28,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +46,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -64,10 +71,12 @@ import tv.own.owntv.ui.components.OwnTVPopup
 import tv.own.owntv.ui.components.StageCompanionStatus
 import tv.own.owntv.ui.components.trapAllFocusExit
 import tv.own.owntv.ui.stage.StageFocus
+import tv.own.owntv.ui.stage.StageGroupLabel
 import tv.own.owntv.ui.stage.StageMenu
 import tv.own.owntv.ui.stage.StageMenuHeader
 import tv.own.owntv.ui.stage.StageMenuItem
 import tv.own.owntv.ui.stage.StageSurface
+import tv.own.owntv.ui.stage.StageTab
 import tv.own.owntv.core.theme.SportioPalette
 import tv.own.owntv.core.theme.teamColor
 import tv.own.owntv.ui.theme.LocalStagePalette
@@ -83,7 +92,7 @@ import tv.own.owntv.ui.theme.stageText
  */
 @Composable
 fun SportsScreen(
-    onPlayChannel: (Long, List<ChannelEntity>) -> Unit,
+    onPlayChannel: (Long, List<ChannelEntity>, String?) -> Unit,
     onChildFocused: () -> Unit,
     previewEnabled: Boolean = true,
     restoreFocus: Boolean = false,
@@ -110,6 +119,8 @@ fun SportsScreen(
     val effectivePreview = previewEnabled && livePreviewSetting
     val preferredLanguages by vm.preferredLanguages.collectAsStateWithLifecycle()
     val languageAsked by vm.languageAsked.collectAsStateWithLifecycle()
+    val channelLimit by vm.channelLimit.collectAsStateWithLifecycle()
+    val excludedLanguages by vm.excludedLanguages.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     var showPhone by remember { mutableStateOf(false) }
@@ -413,6 +424,7 @@ fun SportsScreen(
                     Text(stringResource(R.string.sport_details), style = stageText(30, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.mpx))
                     Text(stringResource(R.string.sport_no_games), style = stageText(20, 500), color = StageColors.Muted)
                 } else {
+                    val zapTitle = fixtureZapTitle(fixture)
                     FixtureDetail(
                         fixture = fixture,
                         followedTeams = followedTeams,
@@ -422,7 +434,7 @@ fun SportsScreen(
                         standings = standings,
                         standingsLoading = standingsLoading,
                         matchRequester = ::matchRequester,
-                        onPlayMatch = { match, list -> vm.playMatch(match, list, onPlayChannel) },
+                        onPlayMatch = { match, list -> vm.playMatch(match, list) { id, entities -> onPlayChannel(id, entities, zapTitle) } },
                         onToggleTeam = { leagueId, abbrev -> vm.toggleTeamFollowed(leagueId, abbrev) },
                         onTogglePlayer = { leagueId, playerId -> vm.togglePlayerFollowed(leagueId, playerId) },
                         sportsVm = vm,
@@ -437,6 +449,11 @@ fun SportsScreen(
             SportsSettingsDialog(
                 leagues = SportsLeagues,
                 active = activeLeagues,
+                channelLimit = channelLimit,
+                excluded = excludedLanguages,
+                onDecreaseLimit = { vm.setChannelLimit(channelLimit - 1) },
+                onIncreaseLimit = { vm.setChannelLimit(channelLimit + 1) },
+                onToggleExclude = { vm.toggleExcludedLanguage(it) },
                 onToggleLeague = { vm.toggleLeagueFollowed(it) },
                 onOpenLanguage = {
                     showSettings = false
@@ -694,6 +711,22 @@ private fun fixtureScoreLine(fixture: Fixture): String {
     return if (home != null && away != null) stringResource(R.string.sport_score, home, away) else fixture.statusLine
 }
 
+/** Overlay heading for the in-player fixture channel list (roadmap point 6): the matchup, the
+ *  event name, or the leader — never blank. Dynamic (team names), so no string resource. */
+@Composable
+private fun fixtureZapTitle(fixture: Fixture): String {
+    val versus = stringResource(R.string.sport_versus)
+    val home = fixture.home
+    val away = fixture.away
+    return when {
+        home != null && away != null -> "${home.abbreviation} $versus ${away.abbreviation}"
+        fixture.format == FixtureFormat.VERSUS ->
+            fixture.entries.take(2).joinToString(" $versus ") { it.name }.ifBlank { fixture.statusLine }
+        fixture.format == FixtureFormat.EVENT -> fixture.title ?: fixture.statusLine
+        else -> fixture.entries.firstOrNull()?.name ?: fixture.statusLine
+    }
+}
+
 @Composable
 private fun FixtureDetail(
     fixture: Fixture,
@@ -838,7 +871,20 @@ private fun FixtureDetail(
         }
         item(key = "channels" + fixture.id) {
             Column(verticalArrangement = Arrangement.spacedBy(8.mpx), modifier = Modifier.padding(top = 8.mpx)) {
-                Text(stringResource(R.string.sport_channels), style = stageText(22, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.mpx), modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.sport_channels), style = stageText(22, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    val refreshing = matchesState == SportsViewModel.MatchesState.Loading
+                    StageSurface(
+                        onClick = { sportsVm.refreshMatches() },
+                        radius = 14.mpx,
+                        enabled = !refreshing,
+                    ) { focused ->
+                        Row(Modifier.padding(horizontal = 12.mpx, vertical = 7.mpx), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.mpx)) {
+                            OwnTVIcon(OwnTVIcon.REFRESH, if (focused) accent.onAccent else StageColors.Text, Modifier.size(18.mpx))
+                            Text(stringResource(R.string.sport_refresh_channels), style = stageText(16, 600), color = if (focused) accent.onAccent else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
                 if (preferredLanguages.isNotEmpty()) {
                     val languageLabels = SportLanguages.order
                         .filter { it in preferredLanguages }
@@ -923,13 +969,20 @@ private fun FixtureDetail(
 }
 
 /**
- * League selection for the Sports hub: which of the catalogue's leagues are active (shown in the
- * rail and loaded). TV-local checklist; the QR/phone web page is the next step (companion page).
+ * Sport settings: three tabs (leagues, channels, languages) instead of one endless list. All
+ * callbacks and states are passed through unchanged — only the grouping is new. The preferred
+ * languages stay in [SportLanguageDialog] (opened from the languages tab); the phone picker in
+ * the leagues tab (it manages leagues, teams and players).
  */
 @Composable
 private fun SportsSettingsDialog(
     leagues: List<SportLeague>,
     active: Set<String>,
+    channelLimit: Int,
+    excluded: Set<SportLanguage>,
+    onDecreaseLimit: () -> Unit,
+    onIncreaseLimit: () -> Unit,
+    onToggleExclude: (SportLanguage) -> Unit,
     onToggleLeague: (String) -> Unit,
     onOpenLanguage: () -> Unit,
     onManageOnPhone: () -> Unit,
@@ -950,43 +1003,175 @@ private fun SportsSettingsDialog(
                     .trapAllFocusExit()
                     .focusGroup(),
             ) {
+                var tab by remember { mutableIntStateOf(0) }
+                var regionTab by remember { mutableIntStateOf(0) }
                 StageMenu(Modifier.verticalScroll(rememberScrollState())) {
                     StageMenuHeader(
-                        title = stringResource(R.string.sport_picker_title),
-                        subtitle = stringResource(R.string.sport_picker_subtitle),
+                        title = stringResource(R.string.sport_settings),
+                        subtitle = null,
                     )
-                    StageMenuItem(
-                        text = stringResource(R.string.sport_manage_on_phone),
-                        icon = OwnTVIcon.PHONE,
-                        onClick = onManageOnPhone,
-                    )
-                    StageMenuItem(
-                        text = stringResource(R.string.sport_language),
-                        icon = OwnTVIcon.LANGUAGE,
-                        onClick = onOpenLanguage,
-                    )
-                    var first = true
-                    RegionOrder.forEach { region ->
-                        val regionLeagues = leagues.filter { it.region == region }
-                        if (regionLeagues.isEmpty()) return@forEach
-                        Text(
-                            stringResource(region.labelRes),
-                            style = stageText(16, 700),
-                            color = StageColors.Muted,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 18.mpx, top = 16.mpx, bottom = 4.mpx),
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.mpx),
+                    ) {
+                        StageTab(
+                            label = stringResource(R.string.sport_settings_tab_leagues),
+                            count = active.size.toString(),
+                            selected = tab == 0,
+                            onClick = { tab = 0 },
+                            modifier = Modifier.weight(1f).focusRequester(firstFocus),
                         )
-                        regionLeagues.forEach { league ->
+                        StageTab(
+                            label = stringResource(R.string.sport_settings_tab_channels),
+                            count = channelLimit.toString(),
+                            selected = tab == 1,
+                            onClick = { tab = 1 },
+                            modifier = Modifier.weight(1f),
+                        )
+                        StageTab(
+                            label = stringResource(R.string.sport_settings_tab_languages),
+                            count = excluded.size.toString(),
+                            selected = tab == 2,
+                            onClick = { tab = 2 },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    when (tab) {
+                        0 -> {
+                            val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
+                            val chevron = stringResource(R.string.sport_sublevel_chevron)
                             StageMenuItem(
-                                text = stringResource(league.labelRes),
-                                icon = OwnTVIcon.SPORT,
-                                checked = league.id in active,
-                                onClick = { onToggleLeague(league.id) },
-                                modifier = if (first) {
-                                    first = false
-                                    Modifier.focusRequester(firstFocus)
-                                } else Modifier,
+                                text = stringResource(R.string.sport_manage_on_phone),
+                                icon = OwnTVIcon.PHONE,
+                                value = chevron,
+                                onClick = onManageOnPhone,
                             )
+                            // Region switcher (top level): globe icon + ‹ n › value set it apart from
+                            // the league rows below; Left/Right cycle the region, OK steps forward.
+                            StageGroupLabel(stringResource(R.string.sport_region_title).uppercase(locale))
+                            val region = RegionOrder[regionTab.coerceIn(RegionOrder.indices)]
+                            val regionLeagues = leagues.filter { it.region == region }
+                            val regionActive = regionLeagues.count { it.id in active }
+                            StageMenuItem(
+                                text = stringResource(region.labelRes),
+                                value = stringResource(R.string.sport_region_cycler_value, regionActive.toString()),
+                                icon = OwnTVIcon.NETWORK,
+                                onClick = { regionTab = (regionTab + 1) % RegionOrder.size },
+                                modifier = Modifier.onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            regionTab = (regionTab + RegionOrder.size - 1) % RegionOrder.size
+                                            true
+                                        }
+                                        Key.DirectionRight -> {
+                                            regionTab = (regionTab + 1) % RegionOrder.size
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                },
+                            )
+                            Text(
+                                stringResource(R.string.sport_region_switch_hint),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 8.mpx, bottom = 4.mpx),
+                            )
+                            // Sublevel: the checklist shows only the leagues of the region above.
+                            StageGroupLabel(stringResource(region.labelRes).uppercase(locale))
+                            regionLeagues.forEach { league ->
+                                StageMenuItem(
+                                    text = stringResource(league.labelRes),
+                                    icon = OwnTVIcon.SPORT,
+                                    checked = league.id in active,
+                                    onClick = { onToggleLeague(league.id) },
+                                )
+                            }
+                        }
+                        1 -> {
+                            // Channels per game as a slider: Left/Right adjust within
+                            // SportsPrefs.Min/MaxChannelLimit, OK steps up; the value stays visible.
+                            // (Replaces the former Fewer/More stepper rows; both callbacks are kept.)
+                            StageMenuItem(
+                                text = stringResource(R.string.sport_channel_limit_title),
+                                value = channelLimit.toString(),
+                                onClick = { if (channelLimit < SportsPrefs.MaxChannelLimit) onIncreaseLimit() },
+                                modifier = Modifier.onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            if (channelLimit > SportsPrefs.MinChannelLimit) onDecreaseLimit()
+                                            true
+                                        }
+                                        Key.DirectionRight -> {
+                                            if (channelLimit < SportsPrefs.MaxChannelLimit) onIncreaseLimit()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                },
+                            )
+                            val span = (SportsPrefs.MaxChannelLimit - SportsPrefs.MinChannelLimit).coerceAtLeast(1)
+                            val fraction = (channelLimit - SportsPrefs.MinChannelLimit).coerceIn(0, span) / span.toFloat()
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 14.mpx, end = 14.mpx, top = 8.mpx)
+                                    .height(6.mpx)
+                                    .background(StageColors.ControlFill, RoundedCornerShape(3.mpx)),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxHeight()
+                                        .fillMaxWidth(fraction)
+                                        .background(stageAccent.accent, RoundedCornerShape(3.mpx)),
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.sport_channel_limit_hint),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 8.mpx),
+                            )
+                            Text(
+                                pluralStringResource(R.plurals.sport_language_quota, SportsMatcher.MinPreferredCount, SportsMatcher.MinPreferredCount),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 4.mpx),
+                            )
+                        }
+                        else -> {
+                            val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
+                            // Preferred languages live in their own dialog (sublevel, ›); Always hide
+                            // below is an inline checklist — the group labels keep the two apart.
+                            StageGroupLabel(stringResource(R.string.sport_preferred_title).uppercase(locale))
+                            StageMenuItem(
+                                text = stringResource(R.string.sport_language),
+                                icon = OwnTVIcon.LANGUAGE,
+                                value = stringResource(R.string.sport_sublevel_chevron),
+                                onClick = onOpenLanguage,
+                            )
+                            // Always hide: excluded languages never appear, not even as exact hits.
+                            StageGroupLabel(stringResource(R.string.sport_exclude_title).uppercase(locale))
+                            Text(
+                                stringResource(R.string.sport_exclude_subtitle),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, bottom = 4.mpx),
+                            )
+                            SportLanguages.order.forEach { language ->
+                                StageMenuItem(
+                                    text = stringResource(language.labelRes),
+                                    icon = OwnTVIcon.LANGUAGE,
+                                    checked = language in excluded,
+                                    onClick = { onToggleExclude(language) },
+                                )
+                            }
                         }
                     }
                 }
