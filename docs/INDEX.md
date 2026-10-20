@@ -1,4 +1,4 @@
-# docs/INDEX.md — Doku-Landkarte (Stand: 2026-10-19)
+# docs/INDEX.md — Doku-Landkarte (Stand: 2026-10-20)
 
 > Zweck: einzige Übersicht aller Dokus mit Status. Agents lesen nur, was hier steht.
 

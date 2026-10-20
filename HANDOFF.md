@@ -1,4 +1,4 @@
-# HANDOFF — nur Status-Zeiger (Stand: 2026-10-19)
+# HANDOFF — nur Status-Zeiger (Stand: 2026-10-20)
 
 > Diese Datei ist kein Wissensspeicher mehr. Verbindlich: `AGENTS.md` + `docs/INDEX.md`.
 > Neues Wissen gehört nach `docs/`, nie hierher.
@@ -33,3 +33,6 @@
   Dubletten-Ranking und Länder-Gruppen; kein zweiter KI-Pass. Details: `docs/SPORT-AI.md`.
 - Playlist-Import (2026-10-19): Provider-Nachricht aus dem Chat einfügen — KI liest sie,
   Bestätigungsseite am Handy, Einwilligung vor dem Senden. Details: `docs/PLAYLIST-IMPORT.md`.
+- v1.0.8 (2026-10-20): released — Core 1.0.71 (Maven + Release) und App v1.0.8 (APKs live).
+  KI-Empfehlung und Provider-Import sind hinter dem KI-Schalter (Standard aus); Key in den
+  Einstellungen oder am Handy. CI beider Repos grün.
