@@ -1087,7 +1087,7 @@ fun LiveScreen(
             showOther = liveShowOther,
             onToggle = { vm.setLiveExcludedLanguages(toggleLiveExcluded(liveExcluded, it)) },
             onToggleOther = { vm.setLiveShowOther(!liveShowOther) },
-            onSelectAll = { vm.setLiveExcludedLanguages(emptySet()); vm.setLiveShowOther(true) },
+            onToggleAll = { vm.toggleAllLiveLanguages() },
             onDismiss = { languageOpen = false },
         )
     }
@@ -1240,8 +1240,9 @@ fun LiveScreen(
 
 /**
  * Live-TV broadcast languages (roadmap point 7): one row per language found in the playlist scan
- * plus the separate Other switch for tagless/unmapped channels. Rows are `StageMenuItem` (its
- * texts carry ellipsis), so no raw `Text` with `maxLines` is added here.
+ * plus the separate Other switch for tagless/unmapped channels. The first row is a switch for all
+ * of them at once (everything on, or nothing). Rows are `StageMenuItem` (its texts carry
+ * ellipsis), so no raw `Text` with `maxLines` is added here.
  */
 @Composable
 private fun LiveLanguageDialog(
@@ -1250,7 +1251,7 @@ private fun LiveLanguageDialog(
     showOther: Boolean,
     onToggle: (String) -> Unit,
     onToggleOther: () -> Unit,
-    onSelectAll: () -> Unit,
+    onToggleAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -1276,8 +1277,8 @@ private fun LiveLanguageDialog(
                     StageMenuItem(
                         text = stringResource(R.string.live_language_all),
                         icon = OwnTVIcon.LANGUAGE,
-                        checked = excluded.isEmpty() && showOther,
-                        onClick = onSelectAll,
+                        checked = LiveLanguages.allEnabled(excluded, showOther),
+                        onClick = onToggleAll,
                         modifier = Modifier.focusRequester(firstFocus),
                     )
                     // Playlist-derived rows only (plus a switched-off language until it is back on,

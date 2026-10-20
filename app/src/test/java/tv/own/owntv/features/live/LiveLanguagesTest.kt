@@ -8,9 +8,9 @@ import org.junit.Test
 import tv.own.owntv.features.sport.SportLanguage
 
 /**
- * Roadmap point 7: the pure Live-TV language logic — country-tag derivation (via
- * `SportLanguages`), the playlist scan into language keys + Other, and the visibility filter.
- * No Android, no DAO. The Sport matcher itself is untouched (see `SportLanguagesTest`).
+ * Roadmap point 7: the pure Live-TV language logic — the provider's tag, the language it stands
+ * for, the playlist scan into language keys + Other, and the visibility filter. No Android, no
+ * DAO. The Sport matcher itself is untouched (see `SportLanguagesTest`).
  */
 class LiveLanguagesTest {
 
@@ -31,12 +31,23 @@ class LiveLanguagesTest {
     @Test
     fun taglessUnknownAndAmbiguousTagsHaveNoLanguage() {
         assertNull(LiveLanguages.languageKeyOf("Sky Sport Bundesliga 1"))
-        // Known country, but no language mapped.
-        assertNull(LiveLanguages.languageKeyOf("AL: SUPER SPORT 3"))
         // Brand/quality mark, not a country tag.
         assertNull(LiveLanguages.languageKeyOf("VIP: CANAL+ PREMIER LEAGUE"))
         // Ambiguous two-letter tag with no mapping.
-        assertNull(LiveLanguages.languageKeyOf("AM: MUSIC CHANNEL"))
+        assertNull(LiveLanguages.languageKeyOf("XX: MYSTERY FEED"))
+        // A country whose language the app does not place.
+        assertNull(LiveLanguages.languageKeyOf("┃AFG┃ AFGHAN INTERNATIONAL HD"))
+    }
+
+    @Test
+    fun wrappedTagsMapToTheirLanguage() {
+        // Another provider writes its tag between two bars.
+        assertEquals(SportLanguage.GERMAN.name, LiveLanguages.languageKeyOf("┃DE┃ DAZN LA LIGA"))
+        assertEquals(SportLanguage.ENGLISH.name, LiveLanguages.languageKeyOf("┃USA┃ E! HD"))
+        assertEquals(SportLanguage.DUTCH.name, LiveLanguages.languageKeyOf("┃NL┃ NPO 1 HD"))
+        assertEquals(SportLanguage.HINDI.name, LiveLanguages.languageKeyOf("┃HINDI┃ ACTOR┃ SHASHI KAPOOR HD"))
+        // A wrapped mark is no language.
+        assertNull(LiveLanguages.languageKeyOf("┃CANAL+┃ NPO 1 HD"))
     }
 
     // --- languageKeyOf with a provider group: groups carry the tag, not the channel names ---
@@ -70,6 +81,18 @@ class LiveLanguagesTest {
     }
 
     @Test
+    fun aWrappedGroupTagPlacesEveryChannelOfTheGroup() {
+        assertEquals(
+            SportLanguage.GERMAN.name,
+            LiveLanguages.languageKeyOf("DAZN LA LIGA", "┃DE┃ DAZN"),
+        )
+        assertEquals(
+            SportLanguage.GERMAN.name,
+            LiveLanguages.languageKeyOf("┃DE┃ DAZN LA LIGA", "┃DE┃ DAZN"),
+        )
+    }
+
+    @Test
     fun anUntaggedGroupFallsBackToTheChannelNameTag() {
         assertEquals(
             SportLanguage.GERMAN.name,
@@ -80,6 +103,15 @@ class LiveLanguagesTest {
             LiveLanguages.languageKeyOf("DE: SKY SPORT 1", null),
         )
         assertNull(LiveLanguages.languageKeyOf("Untagged Channel", "Sports"))
+    }
+
+    @Test
+    fun aGroupWithoutALanguageFallsBackToTheChannelNameTag() {
+        // The group is a region ("AFR"), the channel carries the country.
+        assertEquals(
+            SportLanguage.ARABIC.name,
+            LiveLanguages.languageKeyOf("┃SOM┃ QURAN ONE", "┃AFR┃ GENERAL"),
+        )
     }
 
     @Test
@@ -114,7 +146,7 @@ class LiveLanguagesTest {
                 "DE: SKY SPORT 1",
                 "AT: ORF 1",
                 "UK| SKY SPORTS NEWS",
-                "AL: SUPER SPORT 3",
+                "XX: SUPER SPORT 3",
                 "Untagged Channel",
             ),
         )
@@ -129,6 +161,28 @@ class LiveLanguagesTest {
         val keys = LiveLanguages.availableKeys(listOf("DE: A", "FR: B"))
         assertEquals(setOf(SportLanguage.GERMAN.name, SportLanguage.FRENCH.name), keys)
         assertFalse(LiveLanguages.OTHER in keys)
+    }
+
+    @Test
+    fun scanReadsWrappedTags() {
+        val keys = LiveLanguages.availableKeys(
+            listOf(
+                "┃DE┃ DAZN LA LIGA",
+                "┃DE┃ DAZN BUNDESLIGA",
+                "┃USA┃ DAZN NFL",
+                "┃HINDI┃ ACTOR┃ SHASHI KAPOOR HD",
+                "┃CANAL+┃ NPO 1 HD",
+            ),
+        )
+        assertEquals(
+            setOf(
+                SportLanguage.GERMAN.name,
+                SportLanguage.ENGLISH.name,
+                SportLanguage.HINDI.name,
+                LiveLanguages.OTHER,
+            ),
+            keys,
+        )
     }
 
     // --- isVisible: the Live list / guide filter ---
@@ -152,8 +206,8 @@ class LiveLanguagesTest {
 
     @Test
     fun otherFollowsItsOwnSwitch() {
-        assertTrue(LiveLanguages.isVisible("AL: SUPER SPORT 3", emptySet(), true))
-        assertFalse(LiveLanguages.isVisible("AL: SUPER SPORT 3", emptySet(), false))
+        assertTrue(LiveLanguages.isVisible("XX: SUPER SPORT 3", emptySet(), true))
+        assertFalse(LiveLanguages.isVisible("XX: SUPER SPORT 3", emptySet(), false))
         assertTrue(LiveLanguages.isVisible("Untagged Channel", emptySet(), true))
         assertFalse(LiveLanguages.isVisible("Untagged Channel", emptySet(), false))
         // An OTHER entry in the excluded set never hides anything — Other is switch-only.
@@ -168,6 +222,42 @@ class LiveLanguagesTest {
         assertTrue(LiveLanguages.isVisible("Sky Sport 24", "IT| Sport", excluded, true))
         // Untouched group: the channel-name tag still decides.
         assertFalse(LiveLanguages.isVisible("DE: SKY SPORT 1", "Sports", setOf(SportLanguage.GERMAN.name), true))
+    }
+
+    // --- the "All languages" row: a switch for everything at once ---
+
+    @Test
+    fun allLanguagesIsOnOnlyWhenNothingIsOff() {
+        assertTrue(LiveLanguages.allEnabled(emptySet(), true))
+        assertFalse(LiveLanguages.allEnabled(emptySet(), false))
+        assertFalse(LiveLanguages.allEnabled(setOf(SportLanguage.GERMAN.name), true))
+    }
+
+    @Test
+    fun theAllRowTurnsEverythingOffAndOnAgain() {
+        val options = setOf(SportLanguage.GERMAN.name, SportLanguage.ENGLISH.name, LiveLanguages.OTHER)
+        val off = LiveLanguages.toggleAll(options, emptySet(), true)
+        assertEquals(setOf(SportLanguage.GERMAN.name, SportLanguage.ENGLISH.name), off.excluded)
+        assertFalse(off.showOther)
+        // Every row is off now — no channel of the playlist stays visible.
+        assertFalse(LiveLanguages.isEnabled(SportLanguage.GERMAN.name, off.excluded, off.showOther))
+        assertFalse(LiveLanguages.isEnabled(SportLanguage.ENGLISH.name, off.excluded, off.showOther))
+        assertFalse(LiveLanguages.isEnabled(LiveLanguages.OTHER, off.excluded, off.showOther))
+        // Pressing it again turns everything back on.
+        val on = LiveLanguages.toggleAll(options, off.excluded, off.showOther)
+        assertTrue(on.excluded.isEmpty())
+        assertTrue(on.showOther)
+    }
+
+    @Test
+    fun theAllRowSwitchesEverythingOnWhenOneLanguageIsOff() {
+        val on = LiveLanguages.toggleAll(
+            setOf(SportLanguage.GERMAN.name),
+            setOf(SportLanguage.GERMAN.name),
+            true,
+        )
+        assertTrue(on.excluded.isEmpty())
+        assertTrue(on.showOther)
     }
 
     // --- order ---

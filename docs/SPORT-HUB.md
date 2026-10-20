@@ -20,7 +20,7 @@
   Ligen mit Zähler) → Liga mit Tabs Teams/Spieler → „Alle verwalten"
   (Region-Akkordeons, Suche); Details §7.7 in `sport-hub-plan.md`.
 - Sprachfilter: bis zu 20 Sender pro Spiel (`DefaultLimit = 20`), Filter nach
-  bevorzugter Sprache aus Länderkürzel am Kanalnamen (`DE:`/`UK|`/`FR/`),
+  bevorzugter Sprache aus Länderkürzel am Kanalnamen (`DE:`/`UK|`/`FR/`/`┃DE┃`),
   einmaliger Dialog beim ersten Fixture mit Treffern, danach Sport-Einstellungen.
   Ort: im Matcher VOR dem Cap (`match(fixture, languages, limit)`). Exakte
   Event-Kanäle (Name nennt beide Teams/Spieler, `ChannelMatch.isExact`) passieren

@@ -215,10 +215,10 @@ class AiChannelMatcher(
 
     /** Collapse quality variants of the same feed within one country (`DAZN 1`/`DAZN 1 HD`). */
     private fun normalizedChannelKey(channelName: String): String {
-        val tag = SportLanguages.countryCodeOf(channelName)?.lowercase(Locale.ROOT)
+        val tags = SportLanguages.tagWordsOf(channelName)
         return SportNameMatch.normalize(channelName).trim()
             .split(' ')
-            .filterNot { it == tag || it in GenericChannelWords }
+            .filterNot { it in tags || it in GenericChannelWords }
             .joinToString(" ")
             .ifBlank { SportNameMatch.normalize(channelName).trim() }
     }
@@ -259,11 +259,11 @@ class AiChannelMatcher(
      * model writes "ARD Das Erste".
      */
     private fun coreTokens(channelName: String): Set<String> {
-        val tag = SportLanguages.countryCodeOf(channelName)?.lowercase(Locale.ROOT)
+        val tags = SportLanguages.tagWordsOf(channelName)
         return SportNameMatch.normalize(channelName).trim()
             .split(' ')
             .filter { it.length >= MinScoringTokenLength }
-            .filterNot { it == tag || it in GenericChannelWords }
+            .filterNot { it in tags || it in GenericChannelWords }
             .toSet()
     }
 

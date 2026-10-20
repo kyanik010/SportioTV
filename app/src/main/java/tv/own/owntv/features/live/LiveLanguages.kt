@@ -6,13 +6,13 @@ import tv.own.owntv.features.sport.SportLanguages
 /**
  * Broadcast-language filter for Live TV (roadmap point 7): which playlist languages stay visible.
  *
- * The language of a channel is its provider GROUP's country tag first ([languageKeyOfGroup],
- * e.g. a group named "NL| …" makes every channel in it Dutch) and the channel-name tag
- * ([SportLanguages.countryCodeOf], e.g. "DE:", "UK|", "FR/") only as a fallback. Real playlists
- * tag the groups, not the channel names — reading the name alone put nearly every channel into
- * [OTHER] and the filter did nothing. Channels with neither a tagged group nor a tagged name, or
- * a tag no language maps to ("VIP:", untagged names), are [OTHER]. The Sport matcher is
- * untouched — this object only reads the mapping, it never changes [SportLanguages] behaviour.
+ * The language of a channel is its provider GROUP's tag first ([languageKeyOfGroup], e.g. a group
+ * named "┃HINDI┃ INDIA" makes every channel in it Hindi) and the channel-name tag
+ * ([SportLanguages.languageOfName], e.g. "DE:", "UK|", "FR/", "┃DE┃") only as a fallback. Real
+ * playlists tag the groups, not the channel names — reading the name alone put nearly every channel
+ * into [OTHER] and the filter did nothing. Channels with neither a tagged group nor a tagged name,
+ * or a tag no language maps to ("┃CANAL+┃", "VIP:", untagged names), are [OTHER]. The Sport matcher
+ * is untouched — this object only reads the mapping, it never changes [SportLanguages] behaviour.
  *
  * Persistence lives in `SportsPrefs` (the app's own `sports` DataStore file, not core
  * `SettingsRepository`): Live TV is owned by the app, so a core key would need a core-repo change
@@ -37,15 +37,15 @@ object LiveLanguages {
      * tag or its tag maps to no language — both cases are [OTHER] for the picker.
      */
     fun languageKeyOf(channelName: String): String? =
-        SportLanguages.languageOfChannel(channelName)?.name
+        SportLanguages.languageOfName(channelName)?.name
 
     /**
-     * The language key of [groupName] (a provider group like "NL| …"), or null when the group has
-     * no tag or its tag maps to no language. Shared with the badge ([ProviderTags.channelCountry])
+     * The language key of [groupName] (a provider group like "┃HINDI┃ …"), or null when the group
+     * has no tag or its tag maps to no language. Shared with the badge ([ProviderTags.channelTag])
      * so the filter and the badge never disagree about a group.
      */
     fun languageKeyOfGroup(groupName: String): String? =
-        ProviderTags.channelCountry(groupName)?.let(SportLanguages::languageOfCountry)?.name
+        ProviderTags.channelTag(groupName)?.let(SportLanguages::languageOfTag)?.name
 
     /**
      * The language key of a channel in [groupName]: the group tag wins (providers tag groups, not
@@ -99,4 +99,25 @@ object LiveLanguages {
     /** Whether picker row [key] (a language name or [OTHER]) is currently enabled. */
     fun isEnabled(key: String, excluded: Set<String>, showOther: Boolean): Boolean =
         if (key == OTHER) showOther else key !in excluded
+
+    /** The filter state after a change: the excluded languages and whether "Other" stays visible. */
+    data class FilterState(val excluded: Set<String>, val showOther: Boolean)
+
+    /** Whether every language is on right now — the "All languages" row is a switch, not a button. */
+    fun allEnabled(excluded: Set<String>, showOther: Boolean): Boolean = excluded.isEmpty() && showOther
+
+    /**
+     * The new state when the "All languages" row is pressed: everything off, or everything on.
+     *
+     * Everything off excludes every language the playlist holds ([options] from the scan) and
+     * switches "Other" off too, so the Live list shows nothing. Everything on clears the
+     * exclusions and switches "Other" back on. A language the playlist does not hold has no
+     * channels and stays untouched.
+     */
+    fun toggleAll(options: Set<String>, excluded: Set<String>, showOther: Boolean): FilterState =
+        if (allEnabled(excluded, showOther)) {
+            FilterState(excluded + options.filter { it != OTHER }, false)
+        } else {
+            FilterState(emptySet(), true)
+        }
 }

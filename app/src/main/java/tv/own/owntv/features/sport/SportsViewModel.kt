@@ -538,7 +538,7 @@ class SportsViewModel(
                 aiMatcher.match(broadcasts, aiSuggestionLimit.value)
             }.getOrDefault(emptyList())
                 // "Always hide" stays a hard never, even for an explicitly selected country.
-                .filterNot { SportLanguages.languageOfChannel(it.channelName) in excludedLanguages.value }
+                .filterNot { SportLanguages.languageOfName(it.channelName) in excludedLanguages.value }
             val content = AiState.Content(suggestions, orderedCountries.toSet())
             aiByRequest[requestKey] = content
             aiByFixture[fixture.id] = content

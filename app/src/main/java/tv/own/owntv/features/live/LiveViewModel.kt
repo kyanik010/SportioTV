@@ -435,6 +435,23 @@ class LiveViewModel(
         viewModelScope.launch { sportsPrefs.setLiveShowOther(show) }
     }
 
+    /**
+     * The "All languages" row is a switch: everything visible, or nothing. Off excludes every
+     * language the playlist holds and switches "Other" off, so the Live list is empty; on clears
+     * the exclusions again.
+     */
+    fun toggleAllLiveLanguages() {
+        viewModelScope.launch {
+            val next = LiveLanguages.toggleAll(
+                liveLanguageOptions.value,
+                liveExcludedLanguages.value,
+                liveShowOther.value,
+            )
+            sportsPrefs.setLiveExcludedLanguages(next.excluded)
+            sportsPrefs.setLiveShowOther(next.showOther)
+        }
+    }
+
     private val folderContextKeys: StateFlow<Map<Long, String>> = ctx
         .flatMapLatest { c ->
             if (c.profileId < 0) flowOf(emptyMap())

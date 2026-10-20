@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The pure language logic behind the Sports-Hub channel filter: country-tag parsing, the
- * country → language mapping and the "never wholly empty" filter fallback. No Android, no DAO.
+ * The pure language logic behind the Sports-Hub channel filter: the provider's tag, the country →
+ * language mapping and the "never wholly empty" filter fallback. No Android, no DAO.
  */
 class SportLanguagesTest {
 
@@ -29,39 +29,115 @@ class SportLanguagesTest {
         assertNull(SportLanguages.countryCodeOf("AU (STAN 01) | Coventry City v Newcastle United"))
     }
 
+    @Test
+    fun theBlockFormIsRecognised() {
+        // Another provider wraps its tag between two bars — one of them the heavy bar.
+        assertEquals("DE", SportLanguages.countryCodeOf("┃DE┃ DAZN LA LIGA"))
+        assertEquals("US", SportLanguages.countryCodeOf("| US | NBC SPORTS"))
+        assertEquals("GB", SportLanguages.countryCodeOf("| GB | SKY SPORTS"))
+        assertEquals("DE", SportLanguages.countryCodeOf("|DE| DAZN LA LIGA"))
+    }
+
+    @Test
+    fun aTagThatNamesNoCountryHasNoCountry() {
+        // A language, a region or a brand is no country — the Sport-Hub's country filter must not
+        // read "HINDI" as a country.
+        assertNull(SportLanguages.countryCodeOf("┃HINDI┃ ACTOR┃ SHASHI KAPOOR HD"))
+        assertNull(SportLanguages.countryCodeOf("┃AFR┃ GENERAL"))
+        assertNull(SportLanguages.countryCodeOf("┃CANAL+┃ NPO 1 HD"))
+    }
+
+    @Test
+    fun aTwoWordTagCarriesItsCountryInTheFirstWord() {
+        assertEquals("CA", SportLanguages.countryCodeOf("┃CA EN┃ CBC HD"))
+    }
+
     // --- mapping ---
 
     @Test
     fun theUsersCountryGroupsMapToTheirLanguage() {
-        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfChannel("DE: SKY SPORT AUSTRIA 1 HD"))
-        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfChannel("AT: SKY SPORT AUSTRIA 1"))
-        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfChannel("CH: SRF ZWEI"))
-        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfChannel("UK: SKY SPORTS PREMIER LEAGUE"))
-        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfChannel("US: NBC SPORTS"))
-        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfChannel("SG: HUB PREMIER 1"))
-        assertEquals(SportLanguage.SPANISH, SportLanguages.languageOfChannel("ES: MOVISTAR LALIGA"))
-        assertEquals(SportLanguage.PORTUGUESE, SportLanguages.languageOfChannel("PT: SPORT TV 1"))
-        assertEquals(SportLanguage.FRENCH, SportLanguages.languageOfChannel("FR: CANAL+ FOOT"))
-        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfChannel("SA: SSC 1 HD"))
-        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfChannel("AE: AD SPORTS 1"))
-        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfChannel("QA: BEIN SPORTS MENA 1"))
-        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfChannel("EG: ON TIME SPORTS 1"))
-        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfChannel("MA: ARRYADIA"))
+        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfName("DE: SKY SPORT AUSTRIA 1 HD"))
+        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfName("AT: SKY SPORT AUSTRIA 1"))
+        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfName("CH: SRF ZWEI"))
+        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfName("UK: SKY SPORTS PREMIER LEAGUE"))
+        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfName("US: NBC SPORTS"))
+        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfName("SG: HUB PREMIER 1"))
+        assertEquals(SportLanguage.SPANISH, SportLanguages.languageOfName("ES: MOVISTAR LALIGA"))
+        assertEquals(SportLanguage.PORTUGUESE, SportLanguages.languageOfName("PT: SPORT TV 1"))
+        assertEquals(SportLanguage.FRENCH, SportLanguages.languageOfName("FR: CANAL+ FOOT"))
+        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfName("SA: SSC 1 HD"))
+        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfName("AE: AD SPORTS 1"))
+        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfName("QA: BEIN SPORTS MENA 1"))
+        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfName("EG: ON TIME SPORTS 1"))
+        assertEquals(SportLanguage.ARABIC, SportLanguages.languageOfName("MA: ARRYADIA"))
     }
 
     @Test
     fun dutchItalianPolishAndTurkishMapToTheNewLanguages() {
-        assertEquals(SportLanguage.DUTCH, SportLanguages.languageOfChannel("NL: ESPN 1"))
-        assertEquals(SportLanguage.DUTCH, SportLanguages.languageOfChannel("NL| ESPN 2"))
-        assertEquals(SportLanguage.ITALIAN, SportLanguages.languageOfChannel("IT: SKY SPORT ARENA"))
-        assertEquals(SportLanguage.POLISH, SportLanguages.languageOfChannel("PL: CANAL+ SPORT"))
-        assertEquals(SportLanguage.TURKISH, SportLanguages.languageOfChannel("TR: BEIN SPORTS 1"))
+        assertEquals(SportLanguage.DUTCH, SportLanguages.languageOfName("NL: ESPN 1"))
+        assertEquals(SportLanguage.DUTCH, SportLanguages.languageOfName("NL| ESPN 2"))
+        assertEquals(SportLanguage.ITALIAN, SportLanguages.languageOfName("IT: SKY SPORT ARENA"))
+        assertEquals(SportLanguage.POLISH, SportLanguages.languageOfName("PL: CANAL+ SPORT"))
+        assertEquals(SportLanguage.TURKISH, SportLanguages.languageOfName("TR: BEIN SPORTS 1"))
+    }
+
+    @Test
+    fun theBlockFormMapsToTheSameLanguageAsTheColonForm() {
+        assertEquals(SportLanguage.GERMAN, SportLanguages.languageOfName("┃DE┃ DAZN LA LIGA"))
+        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfName("┃USA┃ E! HD"))
+        assertEquals(SportLanguage.SPANISH, SportLanguages.languageOfName("┃ARG┃ TV PUBLICA HD"))
+    }
+
+    @Test
+    fun theIndianAndKurdishTagsMapToTheirLanguage() {
+        assertEquals(SportLanguage.HINDI, SportLanguages.languageOfName("┃HINDI┃ ACTOR┃ SHASHI KAPOOR HD"))
+        assertEquals(SportLanguage.HINDI, SportLanguages.languageOfName("┃INDIAN┃ SHAMROO THRILLER CINEMA HD"))
+        assertEquals(SportLanguage.URDU, SportLanguages.languageOfName("┃PAKISTANI┃ URDU CINEMA 1 HD"))
+        assertEquals(SportLanguage.PUNJABI, SportLanguages.languageOfName("┃PUNJABI┃ PUNJABI CLASSIC CINEMA 1 HD"))
+        assertEquals(SportLanguage.BENGALI, SportLanguages.languageOfName("┃BANGLA┃ BANGLA NEWS"))
+        assertEquals(SportLanguage.KURDISH, SportLanguages.languageOfName("┃KURD┃ SURYOYO SAT"))
+        assertEquals(SportLanguage.KURDISH, SportLanguages.languageOfName("┃KURD DVB-T┃ 4 KURD TV"))
+        assertEquals(SportLanguage.KURDISH, SportLanguages.languageOfName("┃KURD-SAT┃ KURDISH SAT"))
+    }
+
+    @Test
+    fun aTwoWordTagReadsTheLanguageWordFirst() {
+        assertEquals(SportLanguage.ENGLISH, SportLanguages.languageOfName("┃CA EN┃ CBC HD"))
+        assertEquals(SportLanguage.FRENCH, SportLanguages.languageOfName("┃CA FR┃ CANAL D"))
+    }
+
+    @Test
+    fun theEuropeanCountriesMapToTheirLanguage() {
+        assertEquals(SportLanguage.GREEK, SportLanguages.languageOfName("┃GR┃ NOVA SPORTS"))
+        assertEquals(SportLanguage.SWEDISH, SportLanguages.languageOfName("┃SE┃ SVT1 HD"))
+        assertEquals(SportLanguage.ALBANIAN, SportLanguages.languageOfName("┃AL┃ TOP CHANNEL HD"))
+        assertEquals(SportLanguage.ROMANIAN, SportLanguages.languageOfName("┃RO┃ PRO TV HD"))
+        assertEquals(SportLanguage.PERSIAN, SportLanguages.languageOfName("┃IR┃ IRAN INTERNATIONAL HD"))
+        assertEquals(SportLanguage.CZECH, SportLanguages.languageOfName("┃CZ┃ FILMY | SÉRIE"))
+        assertEquals(SportLanguage.SERBIAN, SportLanguages.languageOfName("┃RS┃ ARENA SPORT"))
+        assertEquals(SportLanguage.CROATIAN, SportLanguages.languageOfName("┃HR┃ ARENA SPORT"))
+        assertEquals(SportLanguage.BULGARIAN, SportLanguages.languageOfName("┃BG┃ BULGARIA"))
+        assertEquals(SportLanguage.HUNGARIAN, SportLanguages.languageOfName("┃HU┃ HUNGARY"))
+        assertEquals(SportLanguage.RUSSIAN, SportLanguages.languageOfName("┃RU┃ RUSSIA 1"))
     }
 
     @Test
     fun anUnknownCountryMapsToNoLanguage() {
-        assertNull(SportLanguages.languageOfChannel("AL: SUPER SPORT 3"))
-        assertNull(SportLanguages.languageOfChannel("XX: MYSTERY FEED"))
+        assertNull(SportLanguages.languageOfName("XX: MYSTERY FEED"))
+        // Afghanistan broadcasts in Dari and Pashto — a language the app does not place.
+        assertNull(SportLanguages.languageOfName("┃AFG┃ AFGHAN INTERNATIONAL HD"))
+    }
+
+    @Test
+    fun aBrandOrRegionMapsToNoLanguage() {
+        // A brand says nothing about the audio — the app never guesses.
+        assertNull(SportLanguages.languageOfName("┃CANAL+┃ NPO 1 HD"))
+        assertNull(SportLanguages.languageOfName("┃OSN┃ E! HD"))
+        assertNull(SportLanguages.languageOfName("┃PPV┃ TENNIS TV FHD"))
+        assertNull(SportLanguages.languageOfName("┃UCL┃ ZIGGO SPORT 1 HD"))
+        assertNull(SportLanguages.languageOfName("┃AFR┃ GENERAL"))
+        assertNull(SportLanguages.languageOfName("┃ASIA┃ PUNJABI"))
+        assertNull(SportLanguages.languageOfName("┃F1 TV┃ F1 TV PRO HD"))
     }
 
     // --- filter ---
@@ -121,7 +197,7 @@ class SportLanguagesTest {
 
     @Test
     fun arabicTagDoesNotStealArgentinaSpanish() {
-        assertEquals(SportLanguage.SPANISH, SportLanguages.languageOfChannel("AR: TYC SPORTS"))
+        assertEquals(SportLanguage.SPANISH, SportLanguages.languageOfName("AR: TYC SPORTS"))
     }
 
     @Test
@@ -164,21 +240,23 @@ class SportLanguagesTest {
     fun strictFilterKeepsExactThroughThePreferenceStep() {
         val matches = listOf(
             match("FR: MAX PPV 21", isExact = true),
-            match("DE: SKY SPORT TENNIS", isExact = false),
-            match("AL: SUPER SPORT 3", isExact = false),
+            match("DE: SKY SPORT BUNDESLIGA"),
         )
         val kept = SportLanguages.filterStrict(matches, setOf(SportLanguage.GERMAN))
         assertEquals(
-            listOf("FR: MAX PPV 21", "DE: SKY SPORT TENNIS"),
+            listOf("FR: MAX PPV 21", "DE: SKY SPORT BUNDESLIGA"),
             kept.map { it.channelName },
         )
     }
 
-    private fun match(name: String, isExact: Boolean = false) =
-        ChannelMatch(channelId = 1L, channelName = name, logoUrl = null, epgTitle = null, score = 1, isExact = isExact)
+    // --- helpers ---
 
-    @Test
-    fun everyLanguageHasADisplayOrder() {
-        assertTrue(SportLanguages.order.containsAll(SportLanguage.values().toList()))
-    }
+    private fun match(name: String, isExact: Boolean = false) = ChannelMatch(
+        channelId = 1L,
+        channelName = name,
+        logoUrl = null,
+        epgTitle = null,
+        score = 10,
+        isExact = isExact,
+    )
 }

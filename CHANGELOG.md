@@ -66,6 +66,18 @@
      that only redirected the in-app updater, so it has no section here. Everything from
      "## v5.1.0" downwards is the inherited OwnTV upstream history, not Sportio releases. -->
 
+## v1.0.9 — 2026-10-20
+
+### New features
+
+- **37 more languages in the live and sport filters**
+- **Channel badges show the provider's country, language or region tag**
+- **"All languages" turns the whole filter off and on**
+
+### Fixes
+
+- **Provider tags in bars and mixed labels no longer land in "Other"**
+
 ## v1.0.8 — 2026-10-20
 
 ### New features

@@ -161,10 +161,10 @@ internal fun LiveStageRow(
             )
         }
         LivePlate(channel.displayLogoUrl, 76.mpx, 54.mpx)
-        // The country tag the provider put at the start of the channel name ("DE:", "UK|", "FR/"),
-        // as a text badge right after the logo plate; untagged channels show none.
-        val countryBadge = remember(channel.name, name.country) { ProviderTags.channelCountry(channel.name, name) }
-        countryBadge?.let { StageTag(it) }
+        // The tag the provider put at the start of the channel name ("DE:", "UK|", "┃HINDI┃"), as a
+        // text badge right after the logo plate; untagged channels show none.
+        val tagBadge = remember(channel.name, name.tag) { ProviderTags.channelTag(channel.name, name) }
+        tagBadge?.let { StageTag(it) }
         Column(Modifier.weight(1f)) {
             Text(name.name, style = stageText(22, 700), color = if (focused) StageColors.FxText else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val title = now?.title ?: nowTitle
@@ -407,8 +407,8 @@ internal data class LiveCategoryEntry(
     val icon: OwnTVIcon?,
     val count: Int?,
     val mark: PlaylistMark?,
-    /** The country badge from the group name (`ProviderTags.channelCountry`); null when untagged. */
-    val country: String? = null,
+    /** The tag badge from the group name (`ProviderTags.channelTag`); null when untagged. */
+    val tag: String? = null,
 )
 
 /**
@@ -446,13 +446,13 @@ internal fun liveCategoryEntries(
             },
             count = if (folderId != null && visibleCounts != null) visibleCounts[folderId] else railCounts[item.key],
             mark = null,
-            // One badge per group row, so mixed-country groups show each row's own land; the
+            // One badge per group row, so mixed groups show each row's own tag; the
             // "GROUPS · DE" heading above stays as it is.
-            country = parsed?.let { ProviderTags.channelCountry(label, it) },
+            tag = parsed?.let { ProviderTags.channelTag(label, it) },
         )
     }
-    val groupCountry = ProviderTags.sharedCountry(entries.mapNotNull { it.name })
-    val heading = (if (groupCountry != null) stringResource(R.string.content_live_groups_country, groupCountry) else stringResource(R.string.content_live_groups))
+    val groupTag = ProviderTags.sharedTag(entries.mapNotNull { it.name })
+    val heading = (if (groupTag != null) stringResource(R.string.content_live_groups_country, groupTag) else stringResource(R.string.content_live_groups))
         .uppercase(androidx.compose.ui.text.intl.Locale.current.platformLocale)
     return entries to heading
 }
@@ -620,8 +620,8 @@ internal fun LiveCategories(
                             count = entry.count?.let { tv.own.owntv.ui.components.formatCount(it) },
                             selected = selected,
                             maxLines = 2,
-                            tags = if (entry.name?.tags.isNullOrEmpty() && entry.country == null) null else { focused ->
-                                entry.country?.let { StageTag(it, onAccent = if (focused) a.onAccent else null) }
+                            tags = if (entry.name?.tags.isNullOrEmpty() && entry.tag == null) null else { focused ->
+                                entry.tag?.let { StageTag(it, onAccent = if (focused) a.onAccent else null) }
                                 entry.name?.tags?.forEach { StageTag(it, onAccent = if (focused) a.onAccent else null) }
                             },
                             trailing = entry.mark?.let { m -> { _ -> StagePlaylistMark(m) } },
@@ -674,9 +674,9 @@ private fun LiveColumnItem(
                 )
                 // Tags on their own line, so a long name is never cut for them (owner, 2026-09-30).
                 val tags = entry.name?.tags.orEmpty()
-                val country = entry.country
-                if (country != null || tags.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.mpx)) {
-                    country?.let { StageTag(it, onAccent = on) }
+                val tag = entry.tag
+                if (tag != null || tags.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.mpx)) {
+                    tag?.let { StageTag(it, onAccent = on) }
                     tags.forEach { StageTag(it, onAccent = on) }
                 }
             }

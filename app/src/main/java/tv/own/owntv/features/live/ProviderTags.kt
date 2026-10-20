@@ -1,23 +1,26 @@
 package tv.own.owntv.features.live
 
 import java.text.Normalizer
-import tv.own.owntv.features.sport.SportLanguages
+import tv.own.owntv.features.sport.CountryTags
 
 /**
  * A provider name split the way Stage shows it (G5): "DE| Sky Cinema Premieren ᴴᴰ" becomes the name
- * "Sky Cinema Premieren", the tag "HD" and the country "DE". Providers write their quality and
- * source marks as superscript letters; each run of them is one tag. The country prefix is shown
- * once, as the "GROUPS · DE" heading, instead of on every row.
+ * "Sky Cinema Premieren", the tag "HD" and the provider's tag "DE". Providers write their quality
+ * and source marks as superscript letters; each run of them is one tag. The tag is shown once, as
+ * the "GROUPS · DE" heading, instead of on every row.
  */
-data class ProviderName(val name: String, val tags: List<String>, val country: String?)
+data class ProviderName(val name: String, val tags: List<String>, val tag: String?)
 
 object ProviderTags {
-    // "DE|", "DE |", "UK |" — two or three capitals and a bar at the very start.
-    private val countryPrefix = Regex("""^([A-Z]{2,3})\s*\|\s*""")
-
+    /**
+     * The provider's tag at the start of the name, cut off the name. "DE| …", "USA| …" and
+     * "┃DE┃ …" are a prefix; a colon or a slash ("DE: …") stays in the name, as before. The forms
+     * come from [CountryTags], the one place that knows them, so the badge and the language filter
+     * can never disagree about the same name.
+     */
     fun parse(raw: String): ProviderName {
-        val prefix = countryPrefix.find(raw)
-        var rest = if (prefix != null) raw.substring(prefix.range.last + 1) else raw
+        val countryTag = CountryTags.tagOf(raw)
+        var rest = countryTag?.takeIf { isPrefix(it) }?.name ?: raw
         val tags = mutableListOf<String>()
         val name = StringBuilder()
         val run = StringBuilder()
@@ -34,23 +37,31 @@ object ProviderTags {
         rest = name.toString().replace(Regex("""\s+"""), " ").trim()
         // A name that was nothing but a prefix and tags keeps the provider's own spelling.
         if (rest.isEmpty()) return ProviderName(raw.trim(), emptyList(), null)
-        return ProviderName(rest, tags, prefix?.groupValues?.get(1))
+        return ProviderName(rest, tags, countryTag?.normalized)
     }
 
     /**
-     * The one country every group shares, for the "GROUPS · DE" heading; null when they differ or
-     * any group has none (then the heading reads just "GROUPS").
+     * Whether the tag is a prefix of the name, i.e. it is cut off before the name is shown: the bar
+     * and block forms are, the colon and slash forms stay in the name.
      */
-    fun sharedCountry(names: List<ProviderName>): String? =
-        names.map { it.country }.distinct().singleOrNull()
+    private fun isPrefix(tag: CountryTags.Tag): Boolean = when (tag.form) {
+        CountryTags.Form.BAR, CountryTags.Form.BLOCK -> true
+        CountryTags.Form.SEPARATOR -> false
+    }
 
     /**
-     * The country badge a channel/category row shows for [rawName]: [parse] covers the `XX|` group
-     * form, [SportLanguages.countryCodeOf] the `XX:` / `XX|` / `XX/` channel forms. Null when the
-     * name carries no tag — the row then shows no badge, never a guess.
+     * The one tag every group shares, for the "GROUPS · DE" heading; null when they differ or any
+     * group has none (then the heading reads just "GROUPS").
      */
-    fun channelCountry(rawName: String, parsed: ProviderName = parse(rawName)): String? =
-        parsed.country ?: SportLanguages.countryCodeOf(rawName)
+    fun sharedTag(names: List<ProviderName>): String? =
+        names.map { it.tag }.distinct().singleOrNull()
+
+    /**
+     * The tag badge a channel/category row shows for [rawName]: the provider's own tag, be it a
+     * country ("DE"), a language ("HINDI") or a region ("AFR"). Null when the name carries no tag —
+     * the row then shows no badge, never a guess.
+     */
+    fun channelTag(rawName: String, parsed: ProviderName = parse(rawName)): String? = parsed.tag
 
     // Superscript digits and letters, and the small-capital/modifier letters providers use for them
     // (ᴴᴰ, ʳᴬᵂ, ⁴ᴷ). Each folds to a plain letter or digit under NFKC.
