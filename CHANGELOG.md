@@ -66,6 +66,15 @@
      that only redirected the in-app updater, so it has no section here. Everything from
      "## v5.1.0" downwards is the inherited OwnTV upstream history, not Sportio releases. -->
 
+## v1.0.8 — 2026-10-20
+
+### New features
+
+- **AI broadcaster recommendations in the Sports hub**
+- **AI reads a pasted provider message into a new source**
+- **AI functions switch in the settings, off by default**
+- **DeepSeek API key in the settings and entered on the phone**
+
 ## v1.0.7 — 2026-10-15
 
 ### New features

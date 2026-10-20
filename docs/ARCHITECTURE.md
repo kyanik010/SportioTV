@@ -1,4 +1,4 @@
-# docs/ARCHITECTURE.md — Module und Entscheidungen (Stand: 2026-10-13)
+# docs/ARCHITECTURE.md — Module und Entscheidungen (Stand: 2026-10-19)
 
 > Zweck: Kurzüberblick, wo was liegt und welche Fork-Entscheidungen gelten.
 > Details: Sport-Hub in `SPORT-HUB.md`, Branding in `BRANDING.md`, i18n in `I18N.md`.
@@ -23,10 +23,12 @@
   search, downloads (aus Navigation entfernt), epg, profiles, settings,
   `sport/` (Sports-Hub: `SportsModels.kt`, `SportsLeagues.kt`, `EspnApi.kt`,
   `SportsMatcher.kt`, `SportNameMatch.kt`, `SportsVocab.kt`, `SportLanguages.kt`,
-  `SportsPrefs.kt`, `SportsViewModel.kt`, `SportsScreen.kt`).
-- `di/AppModule.kt` — Koin (`singleOf EspnApi/SportsMatcher/SportsPrefs`,
-  `viewModelOf SportsViewModel`, `SportsVocab.load`, `LiveSourceIdsProvider`-Naht
-  für Tests statt `SettingsRepository`/`SourceRepository` direkt im Matcher).
+  `SportsPrefs.kt`, `SportsViewModel.kt`, `SportsScreen.kt`, `SportsAiModels.kt`,
+  `DeepSeekClient.kt`, `AiChannelMatcher.kt`).
+- `di/AppModule.kt` — Koin (`singleOf EspnApi/SportsMatcher/SportsPrefs/DeepSeekClient/
+  AiChannelMatcher`, `viewModelOf SportsViewModel`, `SportsVocab.load`,
+  `LiveSourceIdsProvider`-Naht für Tests statt `SettingsRepository`/`SourceRepository`
+  direkt im Matcher).
 
 ## Core-Fork-Änderungen (`OwnTV_Core-main/`)
 
@@ -43,6 +45,9 @@
    `CompanionSelectHtml`: Start → Zeile mit Tabs → „Alle verwalten", ein Submit).
 9. `EpgDao.searchGuide` — `title LIKE OR description LIKE` im Zeitfenster
    (nur mehrwortige Teamnamen in Beschreibung, `EpgMinTokenLength=4`).
+10. `CompanionMode.AI_KEY` — Ein-Feld-Seite für den DeepSeek-Schlüssel des Sport-Hubs
+    (`/apikey`, `companion_ai_key_*`), damit der lange Key am Handy statt per
+    Fernbedienung eingefügt wird; die Seite füllt nur, gespeichert wird am TV.
 
 ## TV-only-Entscheidungen (schnellere Syncs)
 

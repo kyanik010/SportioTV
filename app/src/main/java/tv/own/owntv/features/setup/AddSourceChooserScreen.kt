@@ -47,7 +47,14 @@ fun AddSourceChooserScreen(
             desc = stringResource(R.string.settings_line_add_from_phone),
             value = SettingValue.Opens(null),
             onClick = onRemote,
-            help = SettingHelp(phone, stringResource(R.string.settings_help_add_from_phone), hints = hints),
+            help = SettingHelp(
+                phone,
+                // Two paragraphs: the form on the other device, and the tab that reads a pasted
+                // provider message for the user.
+                stringResource(R.string.settings_help_add_from_phone) +
+                    "\n\n" + stringResource(R.string.settings_help_add_from_message),
+                hints = hints,
+            ),
         )
         val here = stringResource(R.string.settings_add_type_here)
         StageSettingRow(

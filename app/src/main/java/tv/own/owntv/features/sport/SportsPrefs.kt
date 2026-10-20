@@ -81,6 +81,36 @@ class SportsPrefs(private val context: Context) {
     val languageFilterMode: Flow<String> =
         context.sportsDataStore.data.map { it[LanguageFilterModeKey] ?: FilterModeStrict }
 
+    /** DeepSeek API key for the AI recommendation; empty means "not configured". */
+    val deepSeekApiKey: Flow<String> =
+        context.sportsDataStore.data.map { it[DeepSeekKey].orEmpty().trim() }
+
+    /**
+     * How many AI suggestions one request lists, clamped to [SportsMatcher.MinChannelLimit] ..
+     * [SportsMatcher.MaxChannelLimit] on every read. Independent of [channelLimit]: the normal
+     * matcher list and the AI list are two different sources.
+     */
+    val aiSuggestionLimit: Flow<Int> =
+        context.sportsDataStore.data.map {
+            (it[AiSuggestionLimitKey] ?: SportsMatcher.DefaultChannelLimit)
+                .coerceIn(SportsMatcher.MinChannelLimit, SportsMatcher.MaxChannelLimit)
+        }
+
+    /** Countries picked in the AI dialog, as [AiCountry.code] values. Default: Germany. */
+    val aiCountries: Flow<Set<String>> =
+        context.sportsDataStore.data.map { it[AiCountriesKey] ?: setOf(AiCountry.GERMANY.code) }
+
+    /**
+     * Whether the AI functions may run at all: the Sport hub's channel recommendation and the
+     * AI reading of a pasted provider message (playlist import).
+     *
+     * Off by default: the AI costs money, sends data to a third party and is not what every
+     * user wants. The switch does not touch the stored key — it only decides whether the app
+     * may call the provider.
+     */
+    val aiEnabled: Flow<Boolean> =
+        context.sportsDataStore.data.map { it[AiEnabledKey] ?: false }
+
     suspend fun setLeagueFollowed(leagueId: String, followed: Boolean) {
         context.sportsDataStore.edit { prefs ->
             val current = prefs[LeaguesKey] ?: DefaultActiveLeagueIds
@@ -161,6 +191,29 @@ class SportsPrefs(private val context: Context) {
         context.sportsDataStore.edit { prefs -> prefs[LanguageFilterModeKey] = mode }
     }
 
+    /** Store the DeepSeek API key; whitespace-only input clears it. */
+    suspend fun setDeepSeekApiKey(key: String) {
+        context.sportsDataStore.edit { prefs -> prefs[DeepSeekKey] = key.trim() }
+    }
+
+    /** How many AI suggestions one request lists; clamped to the matcher's channel bounds. */
+    suspend fun setAiSuggestionLimit(limit: Int) {
+        context.sportsDataStore.edit { prefs ->
+            prefs[AiSuggestionLimitKey] =
+                limit.coerceIn(SportsMatcher.MinChannelLimit, SportsMatcher.MaxChannelLimit)
+        }
+    }
+
+    /** Remember the countries picked in the AI dialog (ISO codes). */
+    suspend fun setAiCountries(codes: Set<String>) {
+        context.sportsDataStore.edit { prefs -> prefs[AiCountriesKey] = codes }
+    }
+
+    /** Switch the AI functions on or off. Turning them off keeps the stored key. */
+    suspend fun setAiEnabled(enabled: Boolean) {
+        context.sportsDataStore.edit { prefs -> prefs[AiEnabledKey] = enabled }
+    }
+
     companion object {
         fun teamKey(leagueId: String, teamAbbrev: String): String = leagueId + TeamSeparator + teamAbbrev
 
@@ -178,6 +231,10 @@ class SportsPrefs(private val context: Context) {
         private val ChannelLimitKey = intPreferencesKey("channel_limit")
         private val ExcludedLanguagesKey = stringSetPreferencesKey("excluded_languages")
         private val LanguageFilterModeKey = stringPreferencesKey("language_filter_mode")
+        private val DeepSeekKey = stringPreferencesKey("deepseek_api_key")
+        private val AiSuggestionLimitKey = intPreferencesKey("ai_suggestion_limit")
+        private val AiCountriesKey = stringSetPreferencesKey("ai_countries")
+        private val AiEnabledKey = booleanPreferencesKey("ai_enabled")
         private val DefaultLanguageNames = setOf(SportLanguage.GERMAN.name)
         private const val TeamSeparator = "|"
         /** Strict filter: a short preferred list stays short, never padded with foreign feeds. */

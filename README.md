@@ -73,6 +73,11 @@ Open source, GPLv3. Forked from [OwnTV](https://github.com/ahXN00/OwnTV) — tha
 > The full feature reference lives in [docs/](docs/INDEX.md); end-user docs are in
 > [extras/USER_GUIDE.md](extras/USER_GUIDE.md).
 
+## 💚 Support me
+
+If Sportio is useful to you, you can support development here:
+[coinsend.to/@trentl](https://coinsend.to/@trentl)
+
 ---
 
 ## 🧱 Tech stack
@@ -152,11 +157,6 @@ live-TV-and-sports positioning and match the existing code style. Agent rules li
 
 If your language is already available, contribute interface translations across OwnTV's six Android resource components on [Hosted Weblate](https://hosted.weblate.org/projects/owntv/). If it is not listed, [open a language request ticket](https://github.com/ahXN00/OwnTV/issues/new?template=feature_request.yml&title=%5BLanguage%5D%20Add%20) first. A maintainer will review the request, register the locale, and prepare its base translation files on Hosted Weblate. Once the language appears on Hosted Weblate, you can start translating it there. The strings themselves live in [OwnTV's core library repository](https://github.com/ahXN00/OwnTV_Core), together with the language contributor guide covering identifiers, validation, and promotion policy.
 <!-- i18n-contribution:end -->
-
-## 💚 Support me
-
-If Sportio is useful to you, you can support development here:
-[coinsend.to/@trentl](https://coinsend.to/@trentl)
 
 ## 🙏 Credits
 

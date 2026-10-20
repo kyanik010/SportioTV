@@ -29,6 +29,8 @@ import tv.own.owntv.features.settings.DeleteSubtitlesViewModel
 import tv.own.owntv.features.settings.EpgSourcesViewModel
 import tv.own.owntv.features.settings.HomeSettingsViewModel
 import tv.own.owntv.features.settings.LanguageSettingsViewModel
+import tv.own.owntv.features.sport.AiChannelMatcher
+import tv.own.owntv.features.sport.DeepSeekClient
 import tv.own.owntv.features.sport.EspnApi
 import tv.own.owntv.features.sport.LiveSourceIdsProvider
 import tv.own.owntv.features.sport.ProfileLiveSourceIdsProvider
@@ -40,6 +42,7 @@ import tv.own.owntv.features.settings.OpenSubtitlesViewModel
 import tv.own.owntv.features.settings.SettingsViewModel
 import tv.own.owntv.features.setup.DisplaySizeViewModel
 import tv.own.owntv.features.setup.SetupViewModel
+import tv.own.owntv.features.setup.SourceMessageAnalyzer
 import tv.own.owntv.features.shell.ShellViewModel
 import tv.own.owntv.features.subtitles.SubtitleSearchViewModel
 
@@ -201,6 +204,10 @@ val appModule = module {
     viewModelOf(::RailCountsViewModel)
     // Sports hub (Lume-style): ESPN fixtures/scores/standings matched to the user's channels.
     singleOf(::EspnApi)
+    // AI recommendation: DeepSeek names broadcasters, the local matcher resolves them against the
+    // user's own playlists. The model never sees a channel id or a stream URL.
+    singleOf(::DeepSeekClient)
+    singleOf(::AiChannelMatcher)
     // Static matcher vocabulary (team aliases/exonyms + stop-words) from res/raw/sports_matching.json.
     // Takes a Context, resolved from androidContext().
     single { SportsVocab.load(androidContext()) }
@@ -210,4 +217,7 @@ val appModule = module {
     singleOf(::SportsMatcher)
     singleOf(::SportsPrefs)
     viewModelOf(::SportsViewModel)
+    // Reads a pasted provider message for the companion page: the local rules plus the AI. The
+    // core controller gets it as a hook (core must not import the app's AI client).
+    singleOf(::SourceMessageAnalyzer)
 }

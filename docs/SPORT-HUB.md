@@ -1,4 +1,4 @@
-# docs/SPORT-HUB.md — Einstieg (Stand: 2026-10-13)
+# docs/SPORT-HUB.md — Einstieg (Stand: 2026-10-19)
 
 > Zweck: Einstiegsseite für den Sports-Hub; Detailspecs bleiben in den
 > referenzierten Dateien, damit nichts doppelt gepflegt wird.
@@ -25,6 +25,13 @@
   Ort: im Matcher VOR dem Cap (`match(fixture, languages, limit)`). Exakte
   Event-Kanäle (Name nennt beide Teams/Spieler, `ChannelMatch.isExact`) passieren
   immer — sie sind das Event selbst, kein Fremd-Feed davon.
+- KI-Empfehlung: DeepSeek nennt Sender je gewähltem Land, `AiChannelMatcher`
+  prüft sie gegen die eigenen Live-Playlists. Der Kanäle-Bereich hat oben die Tabs
+  **Classic | AI**; im AI-Tab stehen die Treffer als normale vertikale Liste, nach
+  Land gruppiert und mit hartem Ländertag-Filter plus Qualitäts-/Dubletten-Ranking.
+  Ein Fixture+Länder-Cache verhindert bezahlte Wiederholungen. API-Key (direkt oder
+  per QR/Handy über `CompanionMode.AI_KEY`) und
+  Vorschlagszahl (Default 20) stehen im KI-Tab. Details: `SPORT-AI.md`.
 
 ## Matching-Modell (Lume-Modell, Beide-Teams-Pflicht)
 

@@ -15,6 +15,7 @@
     <string name="sport_details">Details</string>
     <string name="sport_standings">Standings</string>
     <string name="sport_channels">Channels</string>
+    <string name="sport_channels_classic">Classic</string>
     <string name="sport_play">Play</string>
     <string name="sport_no_channel">No matching channel in your playlists</string>
     <string name="sport_follow">Follow</string>
@@ -88,4 +89,48 @@
     <string name="live_language_all">All languages</string>
     <string name="live_language_other">Other</string>
     <string name="live_language_filtered">%1$d of %2$d</string>
+    <string name="sport_ai_tab">AI</string>
+    <string name="sport_ai_button">AI recommendation</string>
+    <string name="sport_ai_country_title">Countries</string>
+    <string name="sport_ai_country_subtitle">Choose the countries whose broadcasters the AI should look up.</string>
+    <string name="sport_ai_country_missing">Choose at least one country.</string>
+    <string name="sport_ai_search">Search</string>
+    <string name="sport_ai_search_again">Search again</string>
+    <string name="sport_ai_rail_hint">Left and right switch the suggestion</string>
+    <plurals name="sport_ai_selected_countries">
+        <item quantity="one">%1$d country selected</item>
+        <item quantity="other">%1$d countries selected</item>
+    </plurals>
+    <string name="sport_ai_loading">The AI is looking up broadcasters…</string>
+    <string name="sport_ai_results_title">AI suggestions</string>
+    <plurals name="sport_ai_results_count">
+        <item quantity="one">%1$d suggestion</item>
+        <item quantity="other">%1$d suggestions</item>
+    </plurals>
+    <string name="sport_ai_empty">No AI broadcaster was found in your playlists.</string>
+    <string name="sport_ai_change_countries">Change countries</string>
+    <string name="sport_ai_api_key">DeepSeek API key</string>
+    <string name="sport_ai_api_key_set">Stored</string>
+    <string name="sport_ai_api_key_missing">Not set</string>
+    <string name="sport_ai_api_hint">The key is stored only on this device and used for requests to DeepSeek.</string>
+    <string name="sport_ai_key_hint">Paste the key from platform.deepseek.com</string>
+    <string name="sport_ai_key_on_phone">Add on phone</string>
+    <string name="sport_ai_key_on_phone_sub">Scan the code with your phone and paste the key there</string>
+    <string name="sport_ai_key_on_phone_body">Open the address on your phone, enter the PIN and paste the key. It then appears on the TV.</string>
+    <string name="sport_ai_limit_title">Suggestions per request</string>
+    <string name="sport_ai_limit_hint">Change with left and right</string>
+    <string name="sport_ai_group_results">Recommendations</string>
+    <string name="sport_ai_error_no_key">Add a DeepSeek API key in Sport settings first.</string>
+    <string name="sport_ai_error_invalid_key">DeepSeek rejected the API key.</string>
+    <string name="sport_ai_error_credit">This DeepSeek key has no credit left.</string>
+    <string name="sport_ai_error_rate">DeepSeek is busy. Try again shortly.</string>
+    <string name="sport_ai_error_network">DeepSeek could not be reached.</string>
+    <string name="sport_ai_error_empty">The AI returned no broadcasters.</string>
+    <string name="sport_ai_error_unknown">AI recommendation failed.</string>
+    <string name="sport_ai_open_settings">Open settings</string>
+    <string name="sport_ai_key_missing_title">API key missing</string>
+    <string name="sport_ai_functions_title">AI functions</string>
+    <string name="sport_ai_functions_description">Channel recommendation in the Sports hub and the AI reading of a pasted provider message</string>
+    <string name="sport_ai_functions_off_hint">The AI functions are switched off. Turn them on under Settings › App.</string>
+    <string name="sport_ai_error_disabled">The AI functions are switched off in the settings.</string>
 </resources>

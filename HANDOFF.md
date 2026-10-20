@@ -1,4 +1,4 @@
-# HANDOFF — nur Status-Zeiger (Stand: 2026-10-13)
+# HANDOFF — nur Status-Zeiger (Stand: 2026-10-19)
 
 > Diese Datei ist kein Wissensspeicher mehr. Verbindlich: `AGENTS.md` + `docs/INDEX.md`.
 > Neues Wissen gehört nach `docs/`, nie hierher.
@@ -11,6 +11,7 @@
 - Architektur/Core-Fork/TV-only: `docs/ARCHITECTURE.md`
 - Naming-Freeze: `docs/BRANDING.md`
 - Sport-Hub + Matching: `docs/SPORT-HUB.md` (Details: `sport-hub-plan.md`, `sport-channel-matching.md`)
+- KI-Empfehlung: `docs/SPORT-AI.md`
 - i18n: `docs/i18n-gate.md` (Guide: `docs/i18n.md`, Plan: `docs/internationalization.md`)
 - Release/Signing: `docs/RELEASE.md`
 
@@ -28,3 +29,7 @@
   CI beider Repos grün; Update-Kette gegen v1.0.5 geprüft: gleiche Signatur
   (CN=Sportio, SHA-256 identisch), versionCode 10005 → 10006.
 - Arbeitsstand: Ordner hängt an `trenntl/SportioTV` (Backup-Branches vorhanden), Core frisch geklont (Build grün), READMEs + User Guide als Sportio neu, Naming-Freeze in `docs/BRANDING.md`.
+- KI-Empfehlung (2026-10-19): Hybrid, Classic/AI-Tabs, harter Ländertag, Qualitäts-/
+  Dubletten-Ranking und Länder-Gruppen; kein zweiter KI-Pass. Details: `docs/SPORT-AI.md`.
+- Playlist-Import (2026-10-19): Provider-Nachricht aus dem Chat einfügen — KI liest sie,
+  Bestätigungsseite am Handy, Einwilligung vor dem Senden. Details: `docs/PLAYLIST-IMPORT.md`.

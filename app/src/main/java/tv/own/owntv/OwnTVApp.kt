@@ -25,6 +25,7 @@ import tv.own.owntv.core.di.databaseModule
 import tv.own.owntv.core.di.dataModule
 import tv.own.owntv.di.appModule
 import tv.own.owntv.di.playerModule
+import tv.own.owntv.features.setup.SourceMessageAnalyzer
 import tv.own.owntv.ui.theme.subtitleFontResource
 
 class OwnTVApp : Application(), SingletonImageLoader.Factory, androidx.work.Configuration.Provider {
@@ -115,6 +116,13 @@ class OwnTVApp : Application(), SingletonImageLoader.Factory, androidx.work.Conf
             androidContext(this@OwnTVApp)
             modules(coreModule, appModule, databaseModule, dataModule, playerModule)
         }
+        // The companion page can ask the TV to read a pasted provider message (the "URL / user /
+        // pass" blob a shop sends). The AI client lives in this app and core must not import it,
+        // so the core controller gets a hook instead — the same one-way rule as the hooks above.
+        GlobalContext.get().get<tv.own.owntv.core.companion.CompanionController>().sourceAnalyzer =
+            { message, preferredUrl ->
+                GlobalContext.get().get<SourceMessageAnalyzer>().analyze(message, preferredUrl)
+            }
         Perf.stamp("koin-started")
         // A chosen icon colour ("Later", the first-run pick, a restore) reaches the launcher when the app
         // is next in the background, never while it is on screen.

@@ -88,6 +88,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.R
@@ -104,6 +105,7 @@ import tv.own.owntv.features.update.UpdateDialog
 import tv.own.owntv.features.settings.BackupScreen
 import tv.own.owntv.features.settings.ManageSourcesScreen
 import tv.own.owntv.features.settings.SettingsViewModel
+import tv.own.owntv.features.sport.SportsPrefs
 import tv.own.owntv.core.nav.MainSection
 import tv.own.owntv.ui.components.BrandLockup
 import tv.own.owntv.ui.components.BrowseMode
@@ -117,6 +119,7 @@ import tv.own.owntv.ui.components.displayText
 import tv.own.owntv.ui.components.ContentPanelFill
 import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.StorageBrowser
+import tv.own.owntv.ui.components.TextInputDialog
 import tv.own.owntv.ui.components.BackgroundImageChooserDialog
 import tv.own.owntv.ui.components.ingestBackgroundImage
 import tv.own.owntv.ui.components.trapAllFocusExit
@@ -246,8 +249,13 @@ fun SettingsScreen(
     var showBgPicker by remember { mutableStateOf(false) }
     var showBgRemote by remember { mutableStateOf(false) }
     var showAmbientGlow by remember { mutableStateOf(false) }
+    // The DeepSeek key (Sport hub AI + playlist import). It lives in the app's own `sports`
+    // DataStore, so the row reads it from SportsPrefs — the same place the Sport settings write it.
+    var showDeepSeekKey by remember { mutableStateOf(false) }
     // U2 — background-image ingest copies a multi-megabyte file; it runs here, off the main thread.
     val ingestScope = rememberCoroutineScope()
+    // Writing the key back goes through the DataStore, so it needs a scope of its own.
+    val settingsScope = rememberCoroutineScope()
 
     // Batch 4 · Settings search + quick toggles. Empty query = normal grouped list; a non-blank
     // query swaps the list for flat results that carry their group context ("Playback › HDR").
@@ -270,6 +278,7 @@ fun SettingsScreen(
     val zoomRowFocus = remember { FocusRequester() }
     val popupSizeRowFocus = remember { FocusRequester() }
     val updateRowFocus = remember { FocusRequester() }
+    val deepSeekKeyRowFocus = remember { FocusRequester() }
     val catchupRowFocus = remember { FocusRequester() }
     val catchupSourcesRowFocus = remember { FocusRequester() }
     val epgOffsetRowFocus = remember { FocusRequester() }
@@ -305,13 +314,13 @@ fun SettingsScreen(
         }
         onStartConsumed()
     }
-    val anyDialogOpen = showZoom || showPopupSize || showTheme || showUpdate || showCatchupTime || showCatchupSources || showCatchupSourceValue || showEpgOffset || showGuideDays || showAnimations || showStartup || showStartupChannelPicker || showAfrWarning || showLivePreviewPanelWarning || showBgImageChooser || showBgPicker || showAmbientGlow || showFocusHighlight || showBgRemote || showNavigation || showLiveLayout || stageSettings.open != null
+    val anyDialogOpen = showZoom || showPopupSize || showTheme || showUpdate || showCatchupTime || showCatchupSources || showCatchupSourceValue || showEpgOffset || showGuideDays || showAnimations || showStartup || showStartupChannelPicker || showAfrWarning || showLivePreviewPanelWarning || showBgImageChooser || showBgPicker || showAmbientGlow || showFocusHighlight || showBgRemote || showNavigation || showLiveLayout || showDeepSeekKey || stageSettings.open != null
     // When a dialog closes, restore focus to the row that opened it. NOTE: this restore crosses
     // INTO the root focus group from outside (the dialog), but onEnter does NOT fire for programmatic
     // requestsFocus (only for directional entry) — so dialogReturn must be cleared HERE, not in onEnter.
     // If it's left set, the next directional entry (e.g. sidebar→here) would re-route to a stale row.
     var dialogReturn by remember { mutableStateOf<FocusRequester?>(null) }
-    LaunchedEffect(showZoom, showPopupSize, showTheme, showUpdate, showCatchupTime, showCatchupSources, showCatchupSourceValue, showEpgOffset, showGuideDays, showAnimations, showStartup, showStartupChannelPicker, showAfrWarning, showLivePreviewPanelWarning, showBgImageChooser, showBgPicker, showAmbientGlow, showFocusHighlight, showBgRemote, showNavigation, showLiveLayout, stageSettings.open) {
+    LaunchedEffect(showZoom, showPopupSize, showTheme, showUpdate, showCatchupTime, showCatchupSources, showCatchupSourceValue, showEpgOffset, showGuideDays, showAnimations, showStartup, showStartupChannelPicker, showAfrWarning, showLivePreviewPanelWarning, showBgImageChooser, showBgPicker, showAmbientGlow, showFocusHighlight, showBgRemote, showNavigation, showLiveLayout, showDeepSeekKey, stageSettings.open) {
         // Only after a popup really closed: on first composition there is no opener, and holding a stale
         // offset for the settle frames bounced the page (owner's video, 2026-10-03).
         if (!anyDialogOpen && dialogReturn != null) {
@@ -323,6 +332,11 @@ fun SettingsScreen(
     }
     val settingsVm: SettingsViewModel = koinViewModel()
     val languageVm: LanguageSettingsViewModel = koinViewModel()
+    // The DeepSeek key is app state (Sport hub AI, playlist import), stored in the app's own
+    // `sports` DataStore — the Sport settings write the very same key there.
+    val sportsPrefs: SportsPrefs = koinInject()
+    val deepSeekKey by sportsPrefs.deepSeekApiKey.collectAsStateWithLifecycle(initialValue = "")
+    val aiEnabled by sportsPrefs.aiEnabled.collectAsStateWithLifecycle(initialValue = false)
     val currentLocaleTag by languageVm.currentTag.collectAsStateWithLifecycle()
     val languageChip = languageChipText(currentLocaleTag)
     val livePreview by settingsVm.livePreviewEnabled.collectAsStateWithLifecycle()
@@ -765,6 +779,27 @@ fun SettingsScreen(
             chipTone = if (updateCheckOnStart) TileTone.PRIMARY else TileTone.SECONDARY,
             onClick = { settingsVm.setUpdateCheckOnStart(!updateCheckOnStart) },
         ),
+        // The DeepSeek key, also editable under Sport settings › KI. Here it sits in the App group,
+        // because it is not only a Sport thing: the playlist import uses the same key.
+        // The switch above decides whether the AI may run at all; without it there is nothing to
+        // put a key into, so the row only appears while the AI functions are on.
+        RootRow(
+            "ai_functions", TileTone.PRIMARY, OwnTVIcon.SPARKLE,
+            title = stringResource(R.string.sport_ai_functions_title), desc = stringResource(R.string.sport_ai_functions_description),
+            chip = stringResource(if (aiEnabled) R.string.common_on else R.string.common_off),
+            chipTone = if (aiEnabled) TileTone.PRIMARY else TileTone.SECONDARY,
+            onClick = { settingsScope.launch { sportsPrefs.setAiEnabled(!aiEnabled) } },
+        ),
+        *(if (aiEnabled) listOf(
+            RootRow(
+                "deepseek_api_key", TileTone.PRIMARY, OwnTVIcon.SPARKLE,
+                title = stringResource(R.string.sport_ai_api_key), desc = stringResource(R.string.sport_ai_api_hint),
+                chip = stringResource(if (deepSeekKey.isBlank()) R.string.sport_ai_api_key_missing else R.string.sport_ai_api_key_set),
+                chipTone = if (deepSeekKey.isBlank()) TileTone.SECONDARY else TileTone.PRIMARY,
+                focus = deepSeekKeyRowFocus,
+                onClick = { saveScroll(); dialogReturn = deepSeekKeyRowFocus; showDeepSeekKey = true },
+            ),
+        ) else emptyList()).toTypedArray(),
         RootRow(
             tabRowKey(SettingsTab.NETWORK), TileTone.SECONDARY, OwnTVIcon.NETWORK,
             heading = stringResource(R.string.settings_group_network),
@@ -1033,6 +1068,14 @@ fun SettingsScreen(
                 chip = "v${tv.own.owntv.BuildConfig.VERSION_NAME}") { saveScroll(); dialogReturn = searchFieldFocus; showUpdate = true },
             SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.settings_update_startup), stringResource(R.string.settings_search_keywords_update_auto), OwnTVIcon.REFRESH, TileTone.SECONDARY,
                 chip = if (updateCheckOnStart) stringResource(R.string.common_on) else stringResource(R.string.common_off), chipTone = if (updateCheckOnStart) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setUpdateCheckOnStart(!updateCheckOnStart) },
+            // The AI switch and the DeepSeek key — findable by name. The key row only exists while
+            // the AI functions are on.
+            SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.sport_ai_functions_title), stringResource(R.string.sport_ai_functions_description), OwnTVIcon.SPARKLE, TileTone.PRIMARY,
+                chip = stringResource(if (aiEnabled) R.string.common_on else R.string.common_off),
+                chipTone = if (aiEnabled) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsScope.launch { sportsPrefs.setAiEnabled(!aiEnabled) } },
+            if (aiEnabled) SettingsSearchEntry(stringResource(R.string.settings_group_app), stringResource(R.string.sport_ai_api_key), stringResource(R.string.sport_ai_api_hint), OwnTVIcon.SPARKLE, TileTone.PRIMARY,
+                chip = stringResource(if (deepSeekKey.isBlank()) R.string.sport_ai_api_key_missing else R.string.sport_ai_api_key_set),
+                chipTone = if (deepSeekKey.isBlank()) TileTone.SECONDARY else TileTone.PRIMARY) { saveScroll(); dialogReturn = searchFieldFocus; showDeepSeekKey = true } else null,
         )
         // Rows that already have a bespoke entry above. Those are richer than a generic one — they flip
         // in place, or carry a confirmation the search field has to own — so the catalogue skips them
@@ -1251,6 +1294,22 @@ fun SettingsScreen(
         NavigationPopupHost(settingsVm, onDismiss = { showNavigation = false })
     }
     if (showLiveLayout) LiveLayoutDialog(settingsVm, onClose = { showLiveLayout = false })
+    if (showDeepSeekKey) {
+        // The same key the Sport settings write: the Sport hub's AI recommendation and the
+        // playlist import both read it from the app's `sports` DataStore.
+        TextInputDialog(
+            title = stringResource(R.string.sport_ai_api_key),
+            hint = stringResource(R.string.sport_ai_key_hint),
+            label = stringResource(R.string.sport_ai_api_key),
+            initial = deepSeekKey,
+            isPassword = true,
+            onConfirm = { value ->
+                settingsScope.launch { sportsPrefs.setDeepSeekApiKey(value) }
+                showDeepSeekKey = false
+            },
+            onDismiss = { showDeepSeekKey = false },
+        )
+    }
     StageSettingsDialogHost(settingsVm, stageSettings)
     if (showFocusHighlight) {
         FocusWidthDialog(

@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,8 @@ class SportsViewModel(
     private val prefs: SportsPrefs,
     private val api: EspnApi,
     private val matcher: SportsMatcher,
+    private val aiClient: DeepSeekClient,
+    private val aiMatcher: AiChannelMatcher,
     private val companion: CompanionController,
     private val settings: SettingsRepository,
     private val sourceRepository: SourceRepository,
@@ -54,6 +57,17 @@ class SportsViewModel(
         data object Idle : MatchesState
         data object Loading : MatchesState
         data class Content(val matches: List<ChannelMatch>) : MatchesState
+    }
+
+    /** The AI recommendation state for the currently selected fixture. */
+    sealed interface AiState {
+        data object Idle : AiState
+        data object Loading : AiState
+        data class Content(
+            val suggestions: List<AiSuggestion>,
+            val countries: Set<AiCountry> = emptySet(),
+        ) : AiState
+        data class Error(val failure: AiFailure) : AiState
     }
 
     /** The second column's filter for the selected league. */
@@ -103,6 +117,32 @@ class SportsViewModel(
     val languageAsked: StateFlow<Boolean> = prefs.languageAsked
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** DeepSeek API key; empty means the AI recommendation is not configured yet. */
+    val deepSeekApiKey: StateFlow<String> = prefs.deepSeekApiKey
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** How many AI suggestions one request lists (5–50, default 20). */
+    val aiSuggestionLimit: StateFlow<Int> = prefs.aiSuggestionLimit
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SportsMatcher.DefaultChannelLimit)
+
+    /**
+     * Whether the AI functions may run at all (Sport hub recommendation, AI reading of a pasted
+     * provider message). Off by default; the switch sits in the App settings.
+     *
+     * Eagerly collected: the flag decides whether a request may leave the device, and it must
+     * never be read as "off" just because nobody is looking at it.
+     */
+    val aiEnabled: StateFlow<Boolean> = prefs.aiEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Last countries picked in the AI dialog, in catalogue order. */
+    val aiCountries: StateFlow<Set<AiCountry>> = prefs.aiCountries
+        .map { codes ->
+            val selected = codes.mapNotNull { AiCountry.fromCodeOrName(it) }.toSet()
+            selected.ifEmpty { setOf(AiCountry.GERMANY) }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), setOf(AiCountry.GERMANY))
+
     /** Leagues that hold a followed team or athlete — loaded too, so Favourites can show them. */
     private val followedItemLeagues: StateFlow<Set<String>> = combine(followedTeams, followedPlayers) { teams, players ->
         (teams + players).mapNotNull { it.substringBefore(TeamKeySep).takeIf { id -> sportsLeagueById(id) != null } }.toSet()
@@ -138,6 +178,23 @@ class SportsViewModel(
 
     private val _matches = MutableStateFlow<MatchesState>(MatchesState.Idle)
     val matches: StateFlow<MatchesState> = _matches.asStateFlow()
+
+    private val _aiState = MutableStateFlow<AiState>(AiState.Idle)
+    val aiState: StateFlow<AiState> = _aiState.asStateFlow()
+
+    /** Which channel list the detail pane shows: false = classic matcher, true = AI suggestions. */
+    private val _aiListSelected = MutableStateFlow(false)
+    val aiListSelected: StateFlow<Boolean> = _aiListSelected.asStateFlow()
+
+    private var aiRequest = 0
+    private var aiJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Completed answers, keyed by fixture id and by request (fixture + countries). Returning from
+     * playback or another fixture restores the suggestion list **without** a second paid API call.
+     */
+    private val aiByFixture = HashMap<String, AiState.Content>()
+    private val aiByRequest = HashMap<String, AiState.Content>()
 
     private val _standings = MutableStateFlow<List<LeagueTable>>(emptyList())
     val standings: StateFlow<List<LeagueTable>> = _standings.asStateFlow()
@@ -230,8 +287,18 @@ class SportsViewModel(
                 else combine(sourceRepository.observeSources(pid), settings.defaultSourceId) { sources, defaultId ->
                     scopeLiveSourceIds(sources, defaultId)
                 }
-            }.distinctUntilChanged().drop(1).collect { reResolveSelected() }
+            }.distinctUntilChanged().drop(1).collect {
+                reResolveSelected()
+                clearAiCache()
+            }
         }
+    }
+
+    /** A source change invalidates cached channel ids; the next AI search resolves them again. */
+    private fun clearAiCache() {
+        clearAiRecommendation()
+        aiByFixture.clear()
+        aiByRequest.clear()
     }
 
     fun setTab(tab: FixtureTab) {
@@ -297,12 +364,14 @@ class SportsViewModel(
         _selectedLeagueId.value = FavouritesId
         _selectedFixture.value = null
         _matches.value = MatchesState.Idle
+        _aiState.value = AiState.Idle
     }
 
     fun selectLeague(id: String) {
         _selectedLeagueId.value = id
         _selectedFixture.value = null
         _matches.value = MatchesState.Idle
+        _aiState.value = AiState.Idle
         val league = sportsLeagueById(id) ?: return
         viewModelScope.launch {
             loadBoard(league, force = false)
@@ -311,10 +380,17 @@ class SportsViewModel(
     }
 
     fun selectFixture(fixture: Fixture?) {
+        val previousId = _selectedFixture.value?.id
         _selectedFixture.value = fixture
         if (fixture == null) {
             _matches.value = MatchesState.Idle
+            _aiState.value = AiState.Idle
             return
+        }
+        // Restore this fixture's last answer; a finished request must never need a second paid call.
+        // While the AI functions are off, no answer is shown — the list is not on screen anyway.
+        if (previousId != fixture.id) {
+            _aiState.value = if (aiEnabled.value) aiByFixture[fixture.id] ?: AiState.Idle else AiState.Idle
         }
         // In Favourites the "selected league" is the aggregate, so follow the fixture's own league
         // for the standings panel.
@@ -389,6 +465,115 @@ class SportsViewModel(
         viewModelScope.launch {
             prefs.setChannelLimit(limit)
             reResolveSelected(matchOptions().copy(limit = limit))
+        }
+    }
+
+    /** Store the DeepSeek key from Sport settings. */
+    fun setDeepSeekApiKey(key: String) {
+        viewModelScope.launch { prefs.setDeepSeekApiKey(key) }
+    }
+
+    /** How many AI suggestions one request lists (5–50). */
+    fun setAiSuggestionLimit(limit: Int) {
+        viewModelScope.launch { prefs.setAiSuggestionLimit(limit) }
+    }
+
+    /** Switch the detail pane's channel list between classic matching and AI suggestions. */
+    fun setAiListSelected(selected: Boolean) {
+        // While the AI functions are off there is no AI list to show.
+        _aiListSelected.value = selected && aiEnabled.value
+    }
+
+    /**
+     * Run the AI recommendation for [fixture] in [countries]. A completed answer is cached by
+     * fixture and by country set, so returning from playback or another fixture never triggers a
+     * second paid API call. A newer request wins over a late answer.
+     */
+    fun recommendWithAi(fixture: Fixture, countries: Set<AiCountry>) {
+        // The switch is the last door before a paid request leaves the device.
+        if (!aiEnabled.value) {
+            _aiState.value = AiState.Error(AiFailure.DISABLED)
+            return
+        }
+        val orderedCountries = AiCountry.entries.filter { it in countries }
+        aiRequest++
+        val request = aiRequest
+        aiJob?.cancel()
+        if (orderedCountries.isEmpty()) {
+            _aiState.value = AiState.Error(AiFailure.EMPTY)
+            return
+        }
+        _aiListSelected.value = true
+        val requestKey = aiRequestKey(fixture, orderedCountries)
+        aiByRequest[requestKey]?.let { cached ->
+            aiByFixture[fixture.id] = cached
+            if (_selectedFixture.value?.id == fixture.id) _aiState.value = cached
+            viewModelScope.launch {
+                runCatching { prefs.setAiCountries(orderedCountries.map { it.code }.toSet()) }
+            }
+            return
+        }
+        val key = deepSeekApiKey.value.trim()
+        if (key.isEmpty()) {
+            _aiState.value = AiState.Error(AiFailure.NO_KEY)
+            return
+        }
+        _aiState.value = AiState.Loading
+        aiJob = viewModelScope.launch {
+            runCatching { prefs.setAiCountries(orderedCountries.map { it.code }.toSet()) }
+            val broadcasts = try {
+                aiClient.recommend(fixture, orderedCountries, key)
+            } catch (e: AiRequestException) {
+                if (request == aiRequest && _selectedFixture.value?.id == fixture.id) {
+                    _aiState.value = AiState.Error(e.failure)
+                }
+                return@launch
+            } catch (e: Exception) {
+                if (request == aiRequest && _selectedFixture.value?.id == fixture.id) {
+                    _aiState.value = AiState.Error(AiFailure.UNKNOWN)
+                }
+                return@launch
+            }
+            val suggestions = runCatching {
+                aiMatcher.match(broadcasts, aiSuggestionLimit.value)
+            }.getOrDefault(emptyList())
+                // "Always hide" stays a hard never, even for an explicitly selected country.
+                .filterNot { SportLanguages.languageOfChannel(it.channelName) in excludedLanguages.value }
+            val content = AiState.Content(suggestions, orderedCountries.toSet())
+            aiByRequest[requestKey] = content
+            aiByFixture[fixture.id] = content
+            if (request == aiRequest && _selectedFixture.value?.id == fixture.id) {
+                _aiState.value = content
+            }
+        }
+    }
+
+    /** Cancel the running AI request and drop only the current view state; completed answers stay cached. */
+    fun clearAiRecommendation() {
+        aiRequest++
+        aiJob?.cancel()
+        aiJob = null
+        _aiState.value = AiState.Idle
+    }
+
+    /** Entities for the AI suggestions, in order — for the inline preview. */
+    suspend fun entitiesForAi(suggestions: List<AiSuggestion>): List<tv.own.owntv.core.database.entity.ChannelEntity> =
+        runCatching { matcher.channels(suggestions.map { it.channelId }) }.getOrDefault(emptyList())
+
+    /** Stable cache key: one fixture in one country set. */
+    private fun aiRequestKey(fixture: Fixture, countries: List<AiCountry>): String =
+        fixture.id + AiKeySeparator + countries.joinToString(AiKeyCountrySeparator) { it.code }
+
+    /** Resolve an AI suggestion to entities for the zap context, like [playMatch]. */
+    fun playAiSuggestion(
+        suggestion: AiSuggestion,
+        suggestions: List<AiSuggestion>,
+        onPlay: (Long, List<tv.own.owntv.core.database.entity.ChannelEntity>) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val entities = runCatching { matcher.channels(suggestions.map { it.channelId }) }
+                .getOrDefault(emptyList())
+            onPlay(suggestion.channelId, entities)
         }
     }
 
@@ -513,6 +698,16 @@ class SportsViewModel(
 
     fun stopPhonePicker() = companion.stop()
 
+    // ---- DeepSeek key from a phone (companion AI-key page) ---------------------------------------
+
+    /** AI provider keys pasted on a phone while the key dialog's "on phone" panel is open. */
+    val remoteApiKeys: SharedFlow<String> = companion.apiKeys
+
+    /** Serve the one-field API-key page to a phone on the same Wi-Fi ([CompanionMode.AI_KEY]). */
+    fun startRemoteApiKeyListener(port: Int) = companion.startForApiKey(port)
+
+    fun stopRemoteListener() = companion.stop()
+
     private suspend fun loadBoard(league: SportLeague, force: Boolean) {
         val now = System.currentTimeMillis()
         if (!force) {
@@ -553,6 +748,10 @@ class SportsViewModel(
 
         /** Separator inside [SportsPrefs.teamKey] ("<leagueId>|<abbrev>"). */
         private const val TeamKeySep = '|'
+
+        /** AI cache key separators (fixture id + country codes); technical, never displayed. */
+        private const val AiKeySeparator = "|"
+        private const val AiKeyCountrySeparator = ","
 
         private const val BoardTtlMs = 15L * 60L * 1000L
     }

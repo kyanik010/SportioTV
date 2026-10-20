@@ -79,6 +79,7 @@ import tv.own.owntv.ui.stage.StageLiveBadge
 import tv.own.owntv.ui.stage.StageMenu
 import tv.own.owntv.ui.stage.StageMenuHeader
 import tv.own.owntv.ui.stage.StageMenuItem
+import tv.own.owntv.ui.stage.StageSpecChip
 import tv.own.owntv.ui.stage.StageSurface
 import tv.own.owntv.ui.stage.StageSwitch
 import tv.own.owntv.ui.stage.StageTool
@@ -103,6 +104,8 @@ private const val Tabular = "tnum"
 /**
  * The top-left video (640×360, radius 28): the focused channel through Live TV's preview player — no
  * second decoder — with the LIVE badge and "259 · Sky Cinema Family · Toy Story 4" along the bottom.
+ * With [showStreamChips] (the Sport-Hub fixture preview) the quality + fps facts join the top edge,
+ * same chips as the LiveStage strip — aspect, bitrate and audio stay out of the small box.
  */
 @Composable
 internal fun GuideVideo(
@@ -111,9 +114,12 @@ internal fun GuideVideo(
     nowTitle: String?,
     previewEngine: tv.own.owntv.player.LivePreviewEngine,
     showVideo: Boolean,
+    /** Sport-Hub preview only: quality + fps mini-chips top-right (EPG guide keeps the plain video). */
+    showStreamChips: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val previewState by previewEngine.state.collectAsStateWithLifecycle()
+    val streamChips by previewEngine.streamChips.collectAsStateWithLifecycle()
     val playing = showVideo && previewState != tv.own.owntv.player.LivePreviewEngine.State.ERROR &&
         previewState != tv.own.owntv.player.LivePreviewEngine.State.IDLE
     val r = 28.mpx
@@ -145,6 +151,24 @@ internal fun GuideVideo(
                 style = stageText(19, 700), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 22.mpx, end = 22.mpx, bottom = 18.mpx),
             )
+            // Sport-Hub preview: the quality + fps facts top-right, the LiveStage strip's small
+            // cousin. What drops out: the aspect ('…:…'), everything with a decimal dot — the
+            // declared bitrate ("4.2 Mbps") and the channel-count audio ("5.1") — and the channel
+            // words MONO/STEREO (end with 'O'). Left: the quality ("1080p", "4K") and "50 FPS".
+            if (showStreamChips) {
+                val specChips = streamChips.filterNot {
+                    it.contains(':') || it.contains('.') || it.lastOrNull() == 'O'
+                }
+                if (specChips.isNotEmpty()) {
+                    Row(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 20.mpx, top = 18.mpx),
+                        horizontalArrangement = Arrangement.spacedBy(6.mpx),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) { specChips.forEach { StageSpecChip(it) } }
+                }
+            }
         }
     }
 }

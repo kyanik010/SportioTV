@@ -58,6 +58,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.R
 import tv.own.owntv.core.companion.CompanionLink
@@ -68,15 +69,22 @@ import tv.own.owntv.features.epg.GuideVideo
 import tv.own.owntv.features.live.LiveViewModel
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVPopup
+import tv.own.owntv.ui.components.OwnTVTextField
 import tv.own.owntv.ui.components.StageCompanionStatus
 import tv.own.owntv.ui.components.trapAllFocusExit
+import tv.own.owntv.ui.stage.StageButton
+import tv.own.owntv.ui.stage.StageConfirm
 import tv.own.owntv.ui.stage.StageFocus
 import tv.own.owntv.ui.stage.StageGroupLabel
 import tv.own.owntv.ui.stage.StageMenu
 import tv.own.owntv.ui.stage.StageMenuHeader
 import tv.own.owntv.ui.stage.StageMenuItem
+import tv.own.owntv.ui.stage.StagePopup
+import tv.own.owntv.ui.stage.StagePopupIcon
+import tv.own.owntv.ui.stage.StagePopupOption
 import tv.own.owntv.ui.stage.StageSurface
 import tv.own.owntv.ui.stage.StageTab
+import tv.own.owntv.core.theme.GlassSurface
 import tv.own.owntv.core.theme.SportioPalette
 import tv.own.owntv.core.theme.teamColor
 import tv.own.owntv.ui.theme.LocalStagePalette
@@ -121,10 +129,24 @@ fun SportsScreen(
     val languageAsked by vm.languageAsked.collectAsStateWithLifecycle()
     val channelLimit by vm.channelLimit.collectAsStateWithLifecycle()
     val excludedLanguages by vm.excludedLanguages.collectAsStateWithLifecycle()
+    val deepSeekApiKey by vm.deepSeekApiKey.collectAsStateWithLifecycle()
+    val aiSuggestionLimit by vm.aiSuggestionLimit.collectAsStateWithLifecycle()
+    val aiCountries by vm.aiCountries.collectAsStateWithLifecycle()
+    val aiState by vm.aiState.collectAsStateWithLifecycle()
+    val aiListSelected by vm.aiListSelected.collectAsStateWithLifecycle()
+    val aiEnabled by vm.aiEnabled.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
+    var settingsTab by remember { mutableIntStateOf(0) }
     var showLanguage by remember { mutableStateOf(false) }
     var showPhone by remember { mutableStateOf(false) }
+    var showAiCountries by remember { mutableStateOf(false) }
+    var showAiKeyMissing by remember { mutableStateOf(false) }
     val remoteState by vm.remoteState.collectAsStateWithLifecycle()
+
+    // The AI functions were switched off while the AI list was open: the classic list takes over.
+    LaunchedEffect(aiEnabled) {
+        if (!aiEnabled && aiListSelected) vm.setAiListSelected(false)
+    }
 
     val favouritesSelected = selectedLeagueId == SportsViewModel.FavouritesId
     val fixtures by vm.currentFixtures.collectAsStateWithLifecycle()
@@ -289,7 +311,10 @@ fun SportsScreen(
                     }
                     item(key = "add-leagues") {
                         StageSurface(
-                            onClick = { showSettings = true },
+                            onClick = {
+                                settingsTab = 0
+                                showSettings = true
+                            },
                             radius = 18.mpx,
                             modifier = Modifier.fillMaxWidth().focusRequester(addLeaguesFocus),
                         ) { focused ->
@@ -325,7 +350,10 @@ fun SportsScreen(
                 Text(leagueName, style = stageText(30, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.mpx), modifier = Modifier.fillMaxWidth().padding(top = 10.mpx)) {
                     StageSurface(
-                        onClick = { showSettings = true },
+                        onClick = {
+                            settingsTab = 0
+                            showSettings = true
+                        },
                         radius = 16.mpx,
                         modifier = Modifier.focusRequester(settingsFocus),
                     ) { focused ->
@@ -437,6 +465,37 @@ fun SportsScreen(
                         onPlayMatch = { match, list -> vm.playMatch(match, list) { id, entities -> onPlayChannel(id, entities, zapTitle) } },
                         onToggleTeam = { leagueId, abbrev -> vm.toggleTeamFollowed(leagueId, abbrev) },
                         onTogglePlayer = { leagueId, playerId -> vm.togglePlayerFollowed(leagueId, playerId) },
+                        hasAiKey = aiEnabled && deepSeekApiKey.isNotBlank(),
+                        aiState = aiState,
+                        aiCountries = aiCountries,
+                        aiListSelected = aiListSelected,
+                        aiEnabled = aiEnabled,
+                        onAiListSelected = { vm.setAiListSelected(it) },
+                        onOpenAiCountries = {
+                            if (deepSeekApiKey.isBlank()) {
+                                showAiKeyMissing = true
+                            } else {
+                                vm.setAiListSelected(true)
+                                showAiCountries = true
+                            }
+                        },
+                        onCancelAi = { vm.clearAiRecommendation() },
+                        onRetryAi = {
+                            val countries = (aiState as? SportsViewModel.AiState.Content)
+                                ?.countries
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: aiCountries
+                            vm.recommendWithAi(fixture, countries)
+                        },
+                        onOpenAiSettings = {
+                            settingsTab = AiSettingsTab
+                            showSettings = true
+                        },
+                        onPlayAi = { suggestion, suggestions ->
+                            vm.playAiSuggestion(suggestion, suggestions) { id, entities ->
+                                onPlayChannel(id, entities, zapTitle)
+                            }
+                        },
                         sportsVm = vm,
                         liveVm = liveVm,
                         effectivePreview = effectivePreview,
@@ -451,8 +510,19 @@ fun SportsScreen(
                 active = activeLeagues,
                 channelLimit = channelLimit,
                 excluded = excludedLanguages,
+                deepSeekApiKey = deepSeekApiKey,
+                aiSuggestionLimit = aiSuggestionLimit,
+                aiEnabled = aiEnabled,
+                initialTab = settingsTab,
+                remoteState = remoteState,
+                remoteApiKeys = vm.remoteApiKeys,
                 onDecreaseLimit = { vm.setChannelLimit(channelLimit - 1) },
                 onIncreaseLimit = { vm.setChannelLimit(channelLimit + 1) },
+                onDecreaseAiLimit = { vm.setAiSuggestionLimit(aiSuggestionLimit - 1) },
+                onIncreaseAiLimit = { vm.setAiSuggestionLimit(aiSuggestionLimit + 1) },
+                onSetDeepSeekApiKey = { vm.setDeepSeekApiKey(it) },
+                onStartRemoteApiKey = { vm.startRemoteApiKeyListener(CompanionLink.DEFAULT_PORT) },
+                onStopRemoteApiKey = { vm.stopRemoteListener() },
                 onToggleExclude = { vm.toggleExcludedLanguage(it) },
                 onToggleLeague = { vm.toggleLeagueFollowed(it) },
                 onOpenLanguage = {
@@ -492,6 +562,35 @@ fun SportsScreen(
                     vm.stopPhonePicker()
                 },
             )
+        }
+        if (showAiKeyMissing) {
+            StageConfirm(
+                title = stringResource(R.string.sport_ai_key_missing_title),
+                body = stringResource(R.string.sport_ai_error_no_key),
+                confirm = stringResource(R.string.sport_ai_open_settings),
+                onConfirm = {
+                    showAiKeyMissing = false
+                    settingsTab = AiSettingsTab
+                    showSettings = true
+                },
+                onCancel = { showAiKeyMissing = false },
+            )
+        }
+        if (showAiCountries) {
+            val fixture = selectedFixture
+            if (fixture != null) {
+                AiCountryPicker(
+                    selected = (aiState as? SportsViewModel.AiState.Content)
+                        ?.countries
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: aiCountries,
+                    onConfirm = { countries ->
+                        showAiCountries = false
+                        vm.recommendWithAi(fixture, countries)
+                    },
+                    onDismiss = { showAiCountries = false },
+                )
+            }
         }
     }
 }
@@ -740,6 +839,18 @@ private fun FixtureDetail(
     onPlayMatch: (ChannelMatch, List<ChannelMatch>) -> Unit,
     onToggleTeam: (String, String) -> Unit,
     onTogglePlayer: (String, String) -> Unit,
+    hasAiKey: Boolean,
+    aiState: SportsViewModel.AiState,
+    aiCountries: Set<AiCountry>,
+    aiListSelected: Boolean,
+    /** Whether the AI functions may run; off means the AI tab does not exist. */
+    aiEnabled: Boolean,
+    onAiListSelected: (Boolean) -> Unit,
+    onOpenAiCountries: () -> Unit,
+    onCancelAi: () -> Unit,
+    onRetryAi: () -> Unit,
+    onOpenAiSettings: () -> Unit,
+    onPlayAi: (AiSuggestion, List<AiSuggestion>) -> Unit,
     sportsVm: SportsViewModel,
     liveVm: LiveViewModel,
     effectivePreview: Boolean,
@@ -748,14 +859,44 @@ private fun FixtureDetail(
     val accent = stageAccent
     // The matcher already filtered by the preferred languages (before its cap) — show them as-is.
     val matches = (matchesState as? SportsViewModel.MatchesState.Content)?.matches.orEmpty()
+    val aiContent = aiState as? SportsViewModel.AiState.Content
+    val aiSuggestions = aiContent?.suggestions.orEmpty()
+    // While the AI functions are switched off there is no AI list: the tab does not exist and
+    // nothing of the AI is on screen.
+    val aiVisible = aiEnabled && aiListSelected
     var entities by remember(fixture.id) { mutableStateOf(emptyList<ChannelEntity>()) }
+    var aiEntities by remember(fixture.id) { mutableStateOf(emptyList<ChannelEntity>()) }
     var focusedChannelId by remember(fixture.id) { mutableStateOf<Long?>(null) }
+    var focusedAiId by remember(fixture.id) { mutableStateOf<Long?>(null) }
     LaunchedEffect(fixture.id, matches) {
         entities = if (matches.isEmpty()) emptyList() else sportsVm.entitiesFor(matches)
         if (focusedChannelId == null) focusedChannelId = matches.firstOrNull()?.channelId
     }
-    val previewEntity = entities.firstOrNull { it.id == focusedChannelId } ?: entities.firstOrNull()
-    val previewEpg = matches.firstOrNull { it.channelId == previewEntity?.id }?.epgTitle
+    LaunchedEffect(fixture.id, aiSuggestions) {
+        aiEntities = if (aiSuggestions.isEmpty()) emptyList() else sportsVm.entitiesForAi(aiSuggestions)
+        when {
+            aiSuggestions.isEmpty() -> focusedAiId = null
+            aiSuggestions.none { it.channelId == focusedAiId } ->
+                focusedAiId = aiSuggestions.first().channelId
+        }
+    }
+    val focusedAiSuggestion = if (aiVisible) {
+        aiSuggestions.firstOrNull { it.channelId == focusedAiId }
+    } else {
+        null
+    }
+    val aiPreviewEntity = if (aiVisible) {
+        aiEntities.firstOrNull { it.id == focusedAiId }
+    } else {
+        null
+    }
+    // AI results own the preview only while the AI tab is open; focusing a normal channel clears
+    // focusedAiId, and switching back to Classic immediately returns the preview to the matcher.
+    val previewEntity = aiPreviewEntity
+        ?: entities.firstOrNull { it.id == focusedChannelId }
+        ?: entities.firstOrNull()
+    val previewEpg = focusedAiSuggestion?.broadcaster
+        ?: matches.firstOrNull { it.channelId == previewEntity?.id }?.epgTitle
     LaunchedEffect(previewEntity?.id, effectivePreview, previewArmed) {
         val entity = previewEntity ?: return@LaunchedEffect
         if (!effectivePreview || !previewArmed) return@LaunchedEffect
@@ -770,13 +911,22 @@ private fun FixtureDetail(
                 nowTitle = previewEpg,
                 previewEngine = liveVm.previewEngine,
                 showVideo = effectivePreview && previewArmed,
+                showStreamChips = true, // Sport-Hub preview: quality + fps chips like the LiveStage
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.mpx),
             )
         }
+        // Fixed above the scrolling details: the preview and the heading stay visible while the
+        // user browses channels or returns from playback.
+        Text(
+            stringResource(R.string.sport_details),
+            style = stageText(30, 700),
+            color = StageColors.Text,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(bottom = 6.mpx),
+        )
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.mpx), modifier = Modifier.weight(1f)) {
         item(key = "detail" + fixture.id) {
             Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
-                Text(stringResource(R.string.sport_details), style = stageText(30, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val homeTeam = fixture.home
                 val awayTeam = fixture.away
                 if (homeTeam != null && awayTeam != null) {
@@ -873,63 +1023,109 @@ private fun FixtureDetail(
             Column(verticalArrangement = Arrangement.spacedBy(8.mpx), modifier = Modifier.padding(top = 8.mpx)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.mpx), modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.sport_channels), style = stageText(22, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    val refreshing = matchesState == SportsViewModel.MatchesState.Loading
-                    StageSurface(
-                        onClick = { sportsVm.refreshMatches() },
-                        radius = 14.mpx,
-                        enabled = !refreshing,
-                    ) { focused ->
-                        Row(Modifier.padding(horizontal = 12.mpx, vertical = 7.mpx), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.mpx)) {
-                            OwnTVIcon(OwnTVIcon.REFRESH, if (focused) accent.onAccent else StageColors.Text, Modifier.size(18.mpx))
-                            Text(stringResource(R.string.sport_refresh_channels), style = stageText(16, 600), color = if (focused) accent.onAccent else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (!aiVisible) {
+                        val refreshing = matchesState == SportsViewModel.MatchesState.Loading
+                        StageSurface(
+                            onClick = { sportsVm.refreshMatches() },
+                            radius = 14.mpx,
+                            enabled = !refreshing,
+                        ) { focused ->
+                            Row(Modifier.padding(horizontal = 12.mpx, vertical = 7.mpx), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.mpx)) {
+                                OwnTVIcon(OwnTVIcon.REFRESH, if (focused) accent.onAccent else StageColors.Text, Modifier.size(18.mpx))
+                                Text(stringResource(R.string.sport_refresh_channels), style = stageText(16, 600), color = if (focused) accent.onAccent else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
-                if (preferredLanguages.isNotEmpty()) {
-                    val languageLabels = SportLanguages.order
-                        .filter { it in preferredLanguages }
-                        .map { stringResource(it.labelRes) }
-                    Text(
-                        stringResource(R.string.sport_language_filter, languageLabels.joinToString()),
-                        style = stageText(14, 500), color = StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // Classic matcher list vs. AI suggestions, in the same place and the same row style.
+                // The AI tab only exists while the AI functions are switched on.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.mpx),
+                ) {
+                    StageTab(
+                        label = stringResource(R.string.sport_channels_classic),
+                        count = "",
+                        selected = !aiVisible,
+                        onClick = { onAiListSelected(false) },
+                        modifier = Modifier.weight(1f),
                     )
-                }
-                when (matchesState) {
-                    SportsViewModel.MatchesState.Idle, SportsViewModel.MatchesState.Loading -> {
-                        Text(stringResource(R.string.sport_loading), style = stageText(17, 500), color = StageColors.Dim)
+                    if (aiEnabled) {
+                        StageTab(
+                            label = stringResource(R.string.sport_ai_tab),
+                            count = "",
+                            selected = aiVisible,
+                            onClick = { onAiListSelected(true) },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                    is SportsViewModel.MatchesState.Content -> {
-                        val list = matches
-                        if (list.isEmpty()) {
-                            Text(stringResource(R.string.sport_no_channel), style = stageText(17, 500), color = StageColors.Dim)
-                        } else {
-                            list.forEach { match ->
-                                StageSurface(
-                                    onClick = { onPlayMatch(match, list) },
-                                    radius = 14.mpx,
-                                    modifier = Modifier.fillMaxWidth().focusRequester(matchRequester(match.channelId))
-                                        .onFocusChanged {
-                                            if (it.hasFocus) {
-                                                focusedChannelId = match.channelId
-                                                entities.firstOrNull { entity -> entity.id == match.channelId }?.let { entity ->
-                                                    liveVm.onChannelFocused(entity)
+                }
+                if (aiVisible) {
+                    AiChannelsPanel(
+                        state = aiState,
+                        selectedCountries = aiContent?.countries?.takeIf { it.isNotEmpty() } ?: aiCountries,
+                        hasAiKey = hasAiKey,
+                        onOpenCountries = onOpenAiCountries,
+                        onCancel = onCancelAi,
+                        onRetry = onRetryAi,
+                        onOpenSettings = onOpenAiSettings,
+                        onPlay = onPlayAi,
+                        onFocusSuggestion = { suggestion ->
+                            focusedAiId = suggestion.channelId
+                            focusedChannelId = null
+                            aiEntities.firstOrNull { it.id == suggestion.channelId }?.let { entity ->
+                                liveVm.onChannelFocused(entity)
+                            }
+                        },
+                    )
+                } else {
+                    if (preferredLanguages.isNotEmpty()) {
+                        val languageLabels = SportLanguages.order
+                            .filter { it in preferredLanguages }
+                            .map { stringResource(it.labelRes) }
+                        Text(
+                            stringResource(R.string.sport_language_filter, languageLabels.joinToString()),
+                            style = stageText(14, 500), color = StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    when (matchesState) {
+                        SportsViewModel.MatchesState.Idle, SportsViewModel.MatchesState.Loading -> {
+                            Text(stringResource(R.string.sport_loading), style = stageText(17, 500), color = StageColors.Dim)
+                        }
+                        is SportsViewModel.MatchesState.Content -> {
+                            val list = matches
+                            if (list.isEmpty()) {
+                                Text(stringResource(R.string.sport_no_channel), style = stageText(17, 500), color = StageColors.Dim)
+                            } else {
+                                list.forEach { match ->
+                                    StageSurface(
+                                        onClick = { onPlayMatch(match, list) },
+                                        radius = 14.mpx,
+                                        modifier = Modifier.fillMaxWidth().focusRequester(matchRequester(match.channelId))
+                                            .onFocusChanged {
+                                                if (it.hasFocus) {
+                                                    focusedAiId = null
+                                                    focusedChannelId = match.channelId
+                                                    entities.firstOrNull { entity -> entity.id == match.channelId }?.let { entity ->
+                                                        liveVm.onChannelFocused(entity)
+                                                    }
+                                                }
+                                            },
+                                    ) { focused ->
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(horizontal = 14.mpx, vertical = 10.mpx),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.mpx),
+                                        ) {
+                                            OwnTVIcon(OwnTVIcon.PLAY, if (focused) accent.onAccent else accent.accent, Modifier.size(22.mpx))
+                                            Column(Modifier.weight(1f)) {
+                                                Text(match.channelName, style = stageText(19, 600), color = if (focused) accent.onAccent else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                match.epgTitle?.let { title ->
+                                                    Text(title, style = stageText(14, 500), color = if (focused) accent.onAccent.copy(alpha = 0.8f) else StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 }
                                             }
-                                        },
-                                ) { focused ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(horizontal = 14.mpx, vertical = 10.mpx),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.mpx),
-                                    ) {
-                                        OwnTVIcon(OwnTVIcon.PLAY, if (focused) accent.onAccent else accent.accent, Modifier.size(22.mpx))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(match.channelName, style = stageText(19, 600), color = if (focused) accent.onAccent else StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            match.epgTitle?.let { title ->
-                                                Text(title, style = stageText(14, 500), color = if (focused) accent.onAccent.copy(alpha = 0.8f) else StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            }
+                                            Text(stringResource(R.string.sport_play), style = stageText(15, 600), color = if (focused) accent.onAccent else StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
-                                        Text(stringResource(R.string.sport_play), style = stageText(15, 600), color = if (focused) accent.onAccent else StageColors.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -969,10 +1165,10 @@ private fun FixtureDetail(
 }
 
 /**
- * Sport settings: three tabs (leagues, channels, languages) instead of one endless list. All
- * callbacks and states are passed through unchanged — only the grouping is new. The preferred
- * languages stay in [SportLanguageDialog] (opened from the languages tab); the phone picker in
- * the leagues tab (it manages leagues, teams and players).
+ * Sport settings: four tabs (leagues, channels, languages, AI) instead of one endless list. The
+ * preferred languages stay in [SportLanguageDialog] (opened from the languages tab); the phone
+ * picker in the leagues tab (it manages leagues, teams and players); the AI tab holds the DeepSeek
+ * key and the suggestion count.
  */
 @Composable
 private fun SportsSettingsDialog(
@@ -980,8 +1176,20 @@ private fun SportsSettingsDialog(
     active: Set<String>,
     channelLimit: Int,
     excluded: Set<SportLanguage>,
+    deepSeekApiKey: String,
+    aiSuggestionLimit: Int,
+    /** Whether the AI functions may run; off means the key below is stored but unused. */
+    aiEnabled: Boolean,
+    initialTab: Int,
+    remoteState: CompanionServerState,
+    remoteApiKeys: Flow<String>,
     onDecreaseLimit: () -> Unit,
     onIncreaseLimit: () -> Unit,
+    onDecreaseAiLimit: () -> Unit,
+    onIncreaseAiLimit: () -> Unit,
+    onSetDeepSeekApiKey: (String) -> Unit,
+    onStartRemoteApiKey: () -> Unit,
+    onStopRemoteApiKey: () -> Unit,
     onToggleExclude: (SportLanguage) -> Unit,
     onToggleLeague: (String) -> Unit,
     onOpenLanguage: () -> Unit,
@@ -994,6 +1202,32 @@ private fun SportsSettingsDialog(
         runCatching { firstFocus.requestFocus() }
     }
     BackHandler { onDismiss() }
+    var showApiKey by remember { mutableStateOf(false) }
+    // The key field is controlled from here so handing over to the phone panel — and coming back from
+    // it — never loses what was already typed. Resets when the stored key changes, i.e. after a save.
+    var apiKeyDraft by remember(deepSeekApiKey) { mutableStateOf(deepSeekApiKey) }
+    var showApiKeyPhone by remember { mutableStateOf(false) }
+    var pendingPhoneKey by remember { mutableStateOf<String?>(null) }
+    // Both ways back from the phone panel (a key arrived, or the user backed out) land in the key
+    // dialog again. The payload is parked and applied in its own effect, so only one focus-trapping
+    // popup is ever alive — the phone panel must have left the composition first.
+    var reopenKeyDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(showApiKeyPhone) {
+        if (!showApiKeyPhone) return@LaunchedEffect
+        remoteApiKeys.collect { received ->
+            pendingPhoneKey = received
+            showApiKeyPhone = false
+            reopenKeyDialog = true
+        }
+    }
+    LaunchedEffect(reopenKeyDialog) {
+        if (!reopenKeyDialog) return@LaunchedEffect
+        delay(150)
+        reopenKeyDialog = false
+        pendingPhoneKey?.let { apiKeyDraft = it }
+        pendingPhoneKey = null
+        showApiKey = true
+    }
     OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
         Box(Modifier.fillMaxSize().background(StageColors.Scrim)) {
             Column(
@@ -1003,7 +1237,7 @@ private fun SportsSettingsDialog(
                     .trapAllFocusExit()
                     .focusGroup(),
             ) {
-                var tab by remember { mutableIntStateOf(0) }
+                var tab by remember { mutableIntStateOf(initialTab.coerceIn(0, AiSettingsTab)) }
                 var regionTab by remember { mutableIntStateOf(0) }
                 StageMenu(Modifier.verticalScroll(rememberScrollState())) {
                     StageMenuHeader(
@@ -1023,16 +1257,23 @@ private fun SportsSettingsDialog(
                         )
                         StageTab(
                             label = stringResource(R.string.sport_settings_tab_channels),
-                            count = channelLimit.toString(),
+                            count = "",
                             selected = tab == 1,
                             onClick = { tab = 1 },
                             modifier = Modifier.weight(1f),
                         )
                         StageTab(
                             label = stringResource(R.string.sport_settings_tab_languages),
-                            count = excluded.size.toString(),
+                            count = "",
                             selected = tab == 2,
                             onClick = { tab = 2 },
+                            modifier = Modifier.weight(1f),
+                        )
+                        StageTab(
+                            label = stringResource(R.string.sport_ai_tab),
+                            count = aiSuggestionLimit.toString(),
+                            selected = tab == AiSettingsTab,
+                            onClick = { tab = AiSettingsTab },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1144,7 +1385,7 @@ private fun SportsSettingsDialog(
                                 modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 4.mpx),
                             )
                         }
-                        else -> {
+                        2 -> {
                             val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
                             // Preferred languages live in their own dialog (sublevel, ›); Always hide
                             // below is an inline checklist — the group labels keep the two apart.
@@ -1173,12 +1414,576 @@ private fun SportsSettingsDialog(
                                 )
                             }
                         }
+                        else -> {
+                            val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
+                            StageGroupLabel(stringResource(R.string.sport_ai_provider_deepseek).uppercase(locale))
+                            StageMenuItem(
+                                text = stringResource(R.string.sport_ai_api_key),
+                                icon = OwnTVIcon.SPARKLE,
+                                value = stringResource(
+                                    if (deepSeekApiKey.isBlank()) R.string.sport_ai_api_key_missing
+                                    else R.string.sport_ai_api_key_set,
+                                ),
+                                onClick = {
+                                    apiKeyDraft = deepSeekApiKey
+                                    showApiKey = true
+                                },
+                            )
+                            Text(
+                                stringResource(R.string.sport_ai_api_hint),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 4.mpx),
+                            )
+                            // The key can be stored while the AI is off — it is simply not used then.
+                            if (!aiEnabled) {
+                                Text(
+                                    stringResource(R.string.sport_ai_functions_off_hint),
+                                    style = stageText(15, 500),
+                                    color = StageColors.Dim,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 4.mpx),
+                                )
+                            }
+                            StageGroupLabel(stringResource(R.string.sport_ai_group_results).uppercase(locale))
+                            StageMenuItem(
+                                text = stringResource(R.string.sport_ai_limit_title),
+                                value = aiSuggestionLimit.toString(),
+                                onClick = {
+                                    if (aiSuggestionLimit < SportsPrefs.MaxChannelLimit) onIncreaseAiLimit()
+                                },
+                                modifier = Modifier.onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            if (aiSuggestionLimit > SportsPrefs.MinChannelLimit) onDecreaseAiLimit()
+                                            true
+                                        }
+                                        Key.DirectionRight -> {
+                                            if (aiSuggestionLimit < SportsPrefs.MaxChannelLimit) onIncreaseAiLimit()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                },
+                            )
+                            val span = (SportsPrefs.MaxChannelLimit - SportsPrefs.MinChannelLimit).coerceAtLeast(1)
+                            val fraction = (aiSuggestionLimit - SportsPrefs.MinChannelLimit).coerceIn(0, span) / span.toFloat()
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 14.mpx, end = 14.mpx, top = 8.mpx)
+                                    .height(6.mpx)
+                                    .background(StageColors.ControlFill, RoundedCornerShape(3.mpx)),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxHeight()
+                                        .fillMaxWidth(fraction)
+                                        .background(stageAccent.accent, RoundedCornerShape(3.mpx)),
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.sport_ai_limit_hint),
+                                style = stageText(15, 500),
+                                color = StageColors.Dim,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 18.mpx, end = 18.mpx, top = 8.mpx),
+                            )
+                        }
                     }
                 }
             }
         }
     }
+    if (showApiKey) {
+        DeepSeekKeyDialog(
+            value = apiKeyDraft,
+            onValueChange = { apiKeyDraft = it },
+            onConfirm = {
+                onSetDeepSeekApiKey(apiKeyDraft)
+                showApiKey = false
+            },
+            onFromPhone = {
+                showApiKey = false
+                showApiKeyPhone = true
+            },
+            onDismiss = { showApiKey = false },
+        )
+    }
+    if (showApiKeyPhone) {
+        ApiKeyPhoneDialog(
+            state = remoteState,
+            onStart = onStartRemoteApiKey,
+            onStop = onStopRemoteApiKey,
+            onDismiss = {
+                showApiKeyPhone = false
+                reopenKeyDialog = true
+            },
+        )
+    }
 }
+
+/**
+ * The DeepSeek key editor: a masked field, Cancel/Save, and the way out of typing a long key on a
+ * remote — "Add on phone" opens [ApiKeyPhoneDialog], whose QR serves the one-field companion page
+ * (`CompanionMode.AI_KEY`). The phone only fills; the key lands in this field and Save stores it.
+ */
+@Composable
+private fun DeepSeekKeyDialog(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onFromPhone: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val fieldFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { fieldFocus.requestFocus() }
+    }
+    StagePopup(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.sport_ai_api_key),
+        body = stringResource(R.string.sport_ai_key_hint),
+        width = 820.mpx,
+        buttons = {
+            StageButton(stringResource(R.string.common_cancel), onClick = onDismiss, height = 56.mpx, textSize = 19)
+            StageButton(stringResource(R.string.common_save), onClick = onConfirm, height = 56.mpx, textSize = 19, tinted = true)
+        },
+    ) {
+        OwnTVTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = stringResource(R.string.sport_ai_api_key),
+            modifier = Modifier.fillMaxWidth(),
+            focusRequester = fieldFocus,
+            surface = GlassSurface.DIALOGS,
+            isPassword = true,
+        )
+        StagePopupOption(
+            title = stringResource(R.string.sport_ai_key_on_phone),
+            subtitle = stringResource(R.string.sport_ai_key_on_phone_sub),
+            onClick = onFromPhone,
+            leading = { StagePopupIcon(OwnTVIcon.PHONE) },
+            modifier = Modifier.padding(top = 14.mpx),
+        )
+    }
+}
+
+/**
+ * "Add the key on your phone": the companion server in AI-key mode, so the QR, the PIN and the
+ * address read exactly like every other "send it from another device" panel on the TV. Stops the
+ * server when it leaves the composition; a failed/locked session can be restarted with a fresh PIN.
+ */
+@Composable
+private fun ApiKeyPhoneDialog(
+    state: CompanionServerState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler { onDismiss() }
+    LaunchedEffect(Unit) { onStart() }
+    DisposableEffect(Unit) { onDispose { onStop() } }
+    OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
+        Box(Modifier.fillMaxSize().background(StageColors.Scrim)) {
+            Column(
+                Modifier
+                    .padding(start = 560.mpx, top = 150.mpx, bottom = 24.mpx)
+                    .width(720.mpx)
+                    .trapAllFocusExit()
+                    .focusGroup(),
+                verticalArrangement = Arrangement.spacedBy(20.mpx),
+            ) {
+                Text(
+                    stringResource(R.string.sport_ai_key_on_phone),
+                    style = stageText(30, 700), color = StageColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    stringResource(R.string.sport_ai_key_on_phone_body),
+                    style = stageText(17, 500), color = StageColors.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                StageCompanionStatus(state)
+                if (state is CompanionServerState.Failed || state == CompanionServerState.Locked) {
+                    StageButton(
+                        stringResource(R.string.setup_try_again),
+                        onClick = { onStop(); onStart() },
+                        height = 56.mpx,
+                        textSize = 19,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The AI half of the Channels section: country picker entry, loading/error states and a vertical
+ * suggestion list in exactly the same row shape as the classic matcher list. Keeping it in the
+ * channels section (not in a popup or a horizontal rail) is what makes it read like a normal list
+ * and preserves the answer when the user returns from playback.
+ */
+@Composable
+private fun AiChannelsPanel(
+    state: SportsViewModel.AiState,
+    selectedCountries: Set<AiCountry>,
+    hasAiKey: Boolean,
+    onOpenCountries: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onPlay: (AiSuggestion, List<AiSuggestion>) -> Unit,
+    onFocusSuggestion: (AiSuggestion) -> Unit,
+) {
+    val accent = stageAccent
+    val loading = state is SportsViewModel.AiState.Loading
+    val content = state as? SportsViewModel.AiState.Content
+    val orderedCountries = selectedCountries.sortedBy { AiCountry.entries.indexOf(it) }
+    val countryText = orderedCountries.joinToString { it.displayName() }
+    val firstSuggestionFocus = remember { FocusRequester() }
+    var wasLoading by remember { mutableStateOf(false) }
+    // A completed search lands on the first suggestion, so Left/Right works immediately. A cached
+    // answer restored with the screen does not steal focus — only a real Loading -> Content change.
+    LaunchedEffect(state) {
+        when {
+            state is SportsViewModel.AiState.Loading -> wasLoading = true
+            state is SportsViewModel.AiState.Content && wasLoading -> {
+                wasLoading = false
+                if (state.suggestions.isNotEmpty()) {
+                    delay(150)
+                    runCatching { firstSuggestionFocus.requestFocus() }
+                }
+            }
+            state is SportsViewModel.AiState.Error || state is SportsViewModel.AiState.Idle -> {
+                wasLoading = false
+            }
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
+        StageSurface(
+            onClick = {
+                if (!hasAiKey) onOpenSettings() else if (!loading) onOpenCountries()
+            },
+            radius = 14.mpx,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !loading,
+            idle = Modifier.background(accent.accent.copy(alpha = 0.10f), RoundedCornerShape(14.mpx)),
+        ) { focused ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.mpx, vertical = 11.mpx),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.mpx),
+            ) {
+                OwnTVIcon(
+                    OwnTVIcon.SPARKLE,
+                    if (focused) accent.onAccent else accent.accent,
+                    Modifier.size(22.mpx),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(
+                            if (content != null) R.string.sport_ai_search_again
+                            else R.string.sport_ai_button,
+                        ),
+                        style = stageText(19, 700),
+                        color = if (focused) accent.onAccent else StageColors.Text,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (!hasAiKey) {
+                            stringResource(R.string.sport_ai_key_missing_title)
+                        } else {
+                            countryText.ifBlank { stringResource(R.string.sport_ai_country_missing) }
+                        },
+                        style = stageText(14, 500),
+                        color = if (focused) accent.onAccent.copy(alpha = 0.8f) else StageColors.Dim,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OwnTVIcon(
+                    OwnTVIcon.CHEVRON,
+                    if (focused) accent.onAccent else StageColors.Dim,
+                    Modifier.size(18.mpx),
+                )
+            }
+        }
+        when (state) {
+            SportsViewModel.AiState.Idle -> Unit
+            SportsViewModel.AiState.Loading -> {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.mpx),
+                ) {
+                    Text(
+                        stringResource(R.string.sport_ai_loading),
+                        style = stageText(16, 500),
+                        color = StageColors.Dim,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AiActionButton(stringResource(R.string.common_cancel), onCancel)
+                }
+            }
+            is SportsViewModel.AiState.Error -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.mpx)) {
+                    Text(
+                        aiFailureText(state.failure),
+                        style = stageText(16, 500),
+                        color = StageColors.Dim,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.mpx)) {
+                        if (state.failure == AiFailure.NO_KEY) {
+                            AiActionButton(stringResource(R.string.sport_ai_open_settings), onOpenSettings, tinted = true)
+                        } else {
+                            AiActionButton(stringResource(R.string.common_retry), onRetry, tinted = true)
+                            AiActionButton(stringResource(R.string.sport_ai_change_countries), onOpenCountries)
+                        }
+                    }
+                }
+            }
+            is SportsViewModel.AiState.Content -> {
+                Text(
+                    pluralStringResource(
+                        R.plurals.sport_ai_results_count,
+                        state.suggestions.size,
+                        state.suggestions.size,
+                    ),
+                    style = stageText(16, 600),
+                    color = StageColors.Dim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (state.suggestions.isEmpty()) {
+                    Text(
+                        stringResource(R.string.sport_ai_empty),
+                        style = stageText(16, 500),
+                        color = StageColors.Dim,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
+                    val firstSuggestionId = state.suggestions.first().channelId
+                    state.suggestions
+                        .groupBy { it.country }
+                        .entries
+                        .sortedBy { AiCountry.entries.indexOf(it.key) }
+                        .forEach { (country, countrySuggestions) ->
+                            StageGroupLabel(country.displayName().uppercase(locale))
+                            countrySuggestions.forEach { suggestion ->
+                                AiChannelRow(
+                                    suggestion = suggestion,
+                                    onClick = { onPlay(suggestion, state.suggestions) },
+                                    onFocus = { onFocusSuggestion(suggestion) },
+                                    modifier = if (suggestion.channelId == firstSuggestionId) {
+                                        Modifier.focusRequester(firstSuggestionFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                            }
+                        }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChannelRow(
+    suggestion: AiSuggestion,
+    onClick: () -> Unit,
+    onFocus: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = stageAccent
+    StageSurface(
+        onClick = onClick,
+        radius = 14.mpx,
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (it.isFocused) onFocus() },
+    ) { focused ->
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.mpx, vertical = 10.mpx),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.mpx),
+        ) {
+            OwnTVIcon(
+                OwnTVIcon.PLAY,
+                if (focused) accent.onAccent else accent.accent,
+                Modifier.size(22.mpx),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    suggestion.channelName,
+                    style = stageText(19, 600),
+                    color = if (focused) accent.onAccent else StageColors.Text,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    suggestion.broadcaster,
+                    style = stageText(14, 500),
+                    color = if (focused) accent.onAccent.copy(alpha = 0.8f) else StageColors.Dim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                suggestion.qualityLabel ?: stringResource(R.string.sport_play),
+                style = stageText(15, 600),
+                color = if (focused) accent.onAccent else StageColors.Dim,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiActionButton(
+    text: String,
+    onClick: () -> Unit,
+    tinted: Boolean = false,
+) {
+    val accent = stageAccent
+    StageSurface(
+        onClick = onClick,
+        radius = 12.mpx,
+        idle = if (tinted) {
+            Modifier.background(accent.accent.copy(alpha = 0.2f), RoundedCornerShape(12.mpx))
+        } else {
+            Modifier
+        },
+    ) { focused ->
+        Text(
+            text,
+            style = stageText(15, 600),
+            color = when {
+                focused -> accent.onAccent
+                tinted -> accent.accent
+                else -> StageColors.Text
+            },
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.mpx, vertical = 7.mpx),
+        )
+    }
+}
+
+@Composable
+private fun AiCountryPicker(
+    selected: Set<AiCountry>,
+    onConfirm: (Set<AiCountry>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedCountries by remember {
+        mutableStateOf(selected.ifEmpty { setOf(AiCountry.GERMANY) })
+    }
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { firstFocus.requestFocus() }
+    }
+    val locale = androidx.compose.ui.text.intl.Locale.current.platformLocale
+    StagePopup(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.sport_ai_button),
+        body = stringResource(R.string.sport_ai_country_subtitle),
+        width = 1000.mpx,
+        scroll = false,
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.mpx),
+        ) {
+            // Two-column grid: 13 short rows instead of the old 26-row scroll.
+            Column(Modifier.weight(1f)) {
+                StageGroupLabel(stringResource(R.string.sport_ai_country_title).uppercase(locale))
+                AiCountry.entries.chunked(2).forEachIndexed { rowIndex, row ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.mpx),
+                    ) {
+                        row.forEachIndexed { columnIndex, country ->
+                            StageMenuItem(
+                                text = country.displayName(),
+                                icon = OwnTVIcon.NETWORK,
+                                checked = country in selectedCountries,
+                                onClick = {
+                                    selectedCountries = toggleCountrySelection(selectedCountries, country)
+                                },
+                                modifier = Modifier.weight(1f).then(
+                                    if (rowIndex == 0 && columnIndex == 0) {
+                                        Modifier.focusRequester(firstFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            )
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+            // The action is always beside the selection, never below a long scroll.
+            Column(
+                Modifier.width(220.mpx),
+                verticalArrangement = Arrangement.spacedBy(10.mpx),
+            ) {
+                Text(
+                    pluralStringResource(
+                        R.plurals.sport_ai_selected_countries,
+                        selectedCountries.size,
+                        selectedCountries.size,
+                    ),
+                    style = stageText(15, 600),
+                    color = StageColors.Dim,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                StageButton(
+                    text = stringResource(R.string.sport_ai_search),
+                    onClick = { if (selectedCountries.isNotEmpty()) onConfirm(selectedCountries) },
+                    height = 56.mpx,
+                    textSize = 19,
+                    tinted = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                StageButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = onDismiss,
+                    height = 56.mpx,
+                    textSize = 19,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (selectedCountries.isEmpty()) {
+                    Text(
+                        stringResource(R.string.sport_ai_country_missing),
+                        style = stageText(14, 500),
+                        color = StageColors.Dim,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun toggleCountrySelection(selected: Set<AiCountry>, country: AiCountry): Set<AiCountry> =
+    if (country in selected) selected - country else selected + country
+
+@Composable
+private fun aiFailureText(failure: AiFailure): String = stringResource(
+    when (failure) {
+        AiFailure.NO_KEY -> R.string.sport_ai_error_no_key
+        AiFailure.INVALID_KEY -> R.string.sport_ai_error_invalid_key
+        AiFailure.INSUFFICIENT_CREDIT -> R.string.sport_ai_error_credit
+        AiFailure.RATE_LIMITED -> R.string.sport_ai_error_rate
+        AiFailure.NETWORK -> R.string.sport_ai_error_network
+        AiFailure.EMPTY -> R.string.sport_ai_error_empty
+        AiFailure.DISABLED -> R.string.sport_ai_error_disabled
+        AiFailure.UNKNOWN -> R.string.sport_ai_error_unknown
+    },
+)
 
 /**
  * Language selection for the matched channels: pick one or more languages (or "all"). Reached from
@@ -1321,6 +2126,9 @@ private fun FollowButton(leagueId: String, abbrev: String, followed: Boolean, mo
 private const val DayPattern = "EEE d.M."
 private const val ColorPrefix = "FF"
 private const val HashPrefix = "#"
+
+/** Fourth tab in [SportsSettingsDialog]: the DeepSeek key and the AI suggestion limit. */
+private const val AiSettingsTab = 3
 
 /** Top-to-bottom order of the picker's region groups. */
 private val RegionOrder = listOf(

@@ -1,4 +1,4 @@
-# docs/RELEASE.md — Signing, Versionierung, Updates (Stand: 2026-10-13)
+# docs/RELEASE.md — Signing, Versionierung, Updates (Stand: 2026-10-20)
 
 > Zweck: alles für signierte Releases und In-App-Updates an einem Ort.
 
@@ -20,11 +20,11 @@
   damit immer „neuer" als Releases (kein Downgrade-Fehler, kein Update-Angebot).
   Kehrseite (§Installation in `BUILD.md`): ein Release installiert NICHT über
   einen Debug-Build — erst deinstallieren (Daten vorher als `.own` sichern).
-- Core-Pin: `gradle/libs.versions.toml` → `owntvCore` (Stand: 1.0.70; App v1.0.6.
+- Core-Pin: `gradle/libs.versions.toml` → `owntvCore` (Stand: 1.0.71; App v1.0.8.
   Lokal ignoriert bei gesetztem `owntv.corePath`). Core-Änderung (z. B. `EpgDao`)
   braucht Core-Bump + App-Pin-Mitziehen.
-- App-Releases: `trenntl/SportioTV` (aktuell Tag `v1.0.6`), Core-Releases:
-  `trenntl/SportioTV_Core` (aktuell Tag `core-1.0.70`).
+- App-Releases: `trenntl/SportioTV` (aktuell Tag `v1.0.8`), Core-Releases:
+  `trenntl/SportioTV_Core` (aktuell Tag `core-1.0.71`).
 
 ## Release-Ablauf (gesichert 2026-10-13, Kette v1.0.2 → v1.0.3)
 

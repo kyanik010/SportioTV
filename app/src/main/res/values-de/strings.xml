@@ -15,6 +15,7 @@
     <string name="sport_details">Details</string>
     <string name="sport_standings">Tabelle</string>
     <string name="sport_channels">Kanäle</string>
+    <string name="sport_channels_classic">Klassisch</string>
     <string name="sport_play">Abspielen</string>
     <string name="sport_no_channel">Kein passender Kanal in deinen Playlists</string>
     <string name="sport_follow">Folgen</string>
@@ -88,4 +89,48 @@
     <string name="live_language_all">Alle Sprachen</string>
     <string name="live_language_other">Sonstige</string>
     <string name="live_language_filtered">%1$d von %2$d</string>
+    <string name="sport_ai_tab">KI</string>
+    <string name="sport_ai_button">KI-Empfehlung</string>
+    <string name="sport_ai_country_title">Länder</string>
+    <string name="sport_ai_country_subtitle">Wähle die Länder, deren Sender die KI suchen soll.</string>
+    <string name="sport_ai_country_missing">Wähle mindestens ein Land.</string>
+    <string name="sport_ai_search">Suchen</string>
+    <string name="sport_ai_search_again">Neu suchen</string>
+    <string name="sport_ai_rail_hint">Links und rechts wechseln den Vorschlag</string>
+    <plurals name="sport_ai_selected_countries">
+        <item quantity="one">%1$d Land ausgewählt</item>
+        <item quantity="other">%1$d Länder ausgewählt</item>
+    </plurals>
+    <string name="sport_ai_loading">Die KI sucht Sender…</string>
+    <string name="sport_ai_results_title">KI-Vorschläge</string>
+    <plurals name="sport_ai_results_count">
+        <item quantity="one">%1$d Vorschlag</item>
+        <item quantity="other">%1$d Vorschläge</item>
+    </plurals>
+    <string name="sport_ai_empty">Kein KI-Sender wurde in deinen Playlists gefunden.</string>
+    <string name="sport_ai_change_countries">Länder ändern</string>
+    <string name="sport_ai_api_key">DeepSeek-API-Schlüssel</string>
+    <string name="sport_ai_api_key_set">Hinterlegt</string>
+    <string name="sport_ai_api_key_missing">Nicht hinterlegt</string>
+    <string name="sport_ai_api_hint">Der Schlüssel wird nur auf diesem Gerät gespeichert und für Anfragen an DeepSeek verwendet.</string>
+    <string name="sport_ai_key_hint">Schlüssel von platform.deepseek.com einfügen</string>
+    <string name="sport_ai_key_on_phone">Am Handy eingeben</string>
+    <string name="sport_ai_key_on_phone_sub">Code mit dem Handy scannen und den Schlüssel dort einfügen</string>
+    <string name="sport_ai_key_on_phone_body">Öffne die Adresse am Handy, gib die PIN ein und füge den Schlüssel ein. Er erscheint dann am Fernseher.</string>
+    <string name="sport_ai_limit_title">Vorschläge pro Anfrage</string>
+    <string name="sport_ai_limit_hint">Mit links und rechts ändern</string>
+    <string name="sport_ai_group_results">Empfehlungen</string>
+    <string name="sport_ai_error_no_key">Hinterlege zuerst einen DeepSeek-API-Schlüssel in den Sport-Einstellungen.</string>
+    <string name="sport_ai_error_invalid_key">DeepSeek hat den API-Schlüssel abgelehnt.</string>
+    <string name="sport_ai_error_credit">Für diesen DeepSeek-Schlüssel ist kein Guthaben mehr verfügbar.</string>
+    <string name="sport_ai_error_rate">DeepSeek ist ausgelastet. Versuche es gleich noch einmal.</string>
+    <string name="sport_ai_error_network">DeepSeek ist nicht erreichbar.</string>
+    <string name="sport_ai_error_empty">Die KI hat keine Sender geliefert.</string>
+    <string name="sport_ai_error_unknown">KI-Empfehlung fehlgeschlagen.</string>
+    <string name="sport_ai_open_settings">Einstellungen öffnen</string>
+    <string name="sport_ai_key_missing_title">API-Schlüssel fehlt</string>
+    <string name="sport_ai_functions_title">KI-Funktionen</string>
+    <string name="sport_ai_functions_description">Sender-Empfehlung im Sport-Hub und die KI-Auswertung einer eingefügten Anbieter-Nachricht</string>
+    <string name="sport_ai_functions_off_hint">Die KI-Funktionen sind ausgeschaltet. Aktiviere sie unter Einstellungen › App.</string>
+    <string name="sport_ai_error_disabled">Die KI-Funktionen sind in den Einstellungen ausgeschaltet.</string>
 </resources>

@@ -37,6 +37,8 @@ fun TextInputDialog(
     hint: String? = null,
     onDelete: (() -> Unit)? = null,
     allowBlank: Boolean = true,
+    /** Mask the field (API keys, passwords); the user can reveal it with the field's eye button. */
+    isPassword: Boolean = false,
 ) {
     val resolvedLabel = label ?: stringResource(R.string.common_name)
     val resolvedConfirmLabel = confirmLabel ?: stringResource(R.string.common_save)
@@ -59,6 +61,14 @@ fun TextInputDialog(
             tv.own.owntv.ui.stage.StageButton(resolvedConfirmLabel, onClick = { if (allowBlank || value.isNotBlank()) onConfirm(value.trim()) }, height = 56.mpx, textSize = 19, tinted = true)
         },
     ) {
-        OwnTVTextField(value = value, onValueChange = { value = it }, label = resolvedLabel, modifier = Modifier.fillMaxWidth(), focusRequester = fieldFocus, surface = GlassSurface.DIALOGS)
+        OwnTVTextField(
+            value = value,
+            onValueChange = { value = it },
+            label = resolvedLabel,
+            modifier = Modifier.fillMaxWidth(),
+            focusRequester = fieldFocus,
+            surface = GlassSurface.DIALOGS,
+            isPassword = isPassword,
+        )
     }
 }

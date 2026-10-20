@@ -88,6 +88,15 @@ adb shell monkey -p tv.sportio.app -c android.intent.category.LEANBACK_LAUNCHER 
 - Screenshots: `screencap -p /sdcard/x.png` + `pull`. D-Pad: `input keyevent`
   (19–23 hoch/runter/links/rechts/OK, 4 = Back, 3 = Home).
 - AVD-`config.ini`: `hw.keyboard=yes` (sonst schluckt der Emulator Host-Tasten).
+- **Companion-Seite vom PC:** der Emulator hängt hinter NAT, vom Handy ist er nicht zu
+  erreichen. Per Port-Forward kommt der PC-Browser ran:
+  ```powershell
+  adb forward tcp:8089 tcp:8089
+  # http://localhost:8089/  → PIN-Gate; der PIN steht auf der TV-Seite „Add a source › Remote"
+  ```
+  `adb forward --remove tcp:8089` macht es rückgängig. Der PIN ist pro Sitzung neu („New PIN"
+  auf der TV-Seite startet den Server mit einem neuen). Ohne den Forward bleibt die Seite auf
+  `http://10.0.2.15:8089/` (nur aus dem Emulator heraus erreichbar).
 
 ## TV-Box (Android TV)
 

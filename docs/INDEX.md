@@ -1,4 +1,4 @@
-# docs/INDEX.md — Doku-Landkarte (Stand: 2026-10-13)
+# docs/INDEX.md — Doku-Landkarte (Stand: 2026-10-19)
 
 > Zweck: einzige Übersicht aller Dokus mit Status. Agents lesen nur, was hier steht.
 
@@ -11,8 +11,10 @@
 | `ARCHITECTURE.md` | Module, Core-Bezug, TV-only, Sport-Hub-Überblick | aktiv |
 | `BRANDING.md` | Was heisst Sportio, was bleibt technisch OwnTV (Naming-Freeze) | aktiv |
 | `SPORT-HUB.md` | Sport-Hub + Channel-Matching (konsolidiert) | aktiv, ersetzt `sport-hub-plan.md` + `sport-channel-matching.md` als Einstieg |
+| `SPORT-AI.md` | DeepSeek-KI-Empfehlung im Sport-Hub (Ablauf, Datenschutz, lokaler Katalog-Abgleich) | aktiv, Stand 2026-10-20, + Ausnahme Playlist-Import, Key und KI-Schalter in den App-Einstellungen |
 | `sport-hub-plan.md` | Ausführliche Sport-Hub-Spezifikation (Phasen 1–7) | aktiv, Detailreferenz |
 | `sport-channel-matching.md` | ESPN-Fixture → Sender-Matching (Discovery, Scoring, Tests) | aktiv, Detailreferenz |
+| `PLAYLIST-IMPORT.md` | Playlist aus Provider-Nachricht (KI zuerst, Companion-Bestätigung am Handy) | aktiv, Stand 2026-10-20, P0–P3 umgesetzt, KI-Schalter (Core 1.0.71) |
 | `sport-roadmap.md` | Roadmap Reddit-Feedback + User-Punkte (Sport-Hub, Live-TV Sprachen) | aktiv, Plan 2026-10-14 |
 | `i18n-gate.md` | Gate-Befehle + Literal-Workflow | aktiv |
 | `internationalization.md` | i18n-Gesamtplan v2 (Phasen 0–3 done) | aktiv, Detailreferenz |
