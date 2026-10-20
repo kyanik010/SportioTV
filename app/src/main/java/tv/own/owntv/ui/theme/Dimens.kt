@@ -1,27 +1,58 @@
 package tv.own.owntv.ui.theme
 
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.ui.unit.dp
 
-/** Shared spacing / sizing tokens for the 4-layer TV shell. */
+/** Shared spacing / sizing tokens for the 4-layer TV shell - NOW RESPONSIVE! */
 object Dimens {
+
+    // Responsive functions — values are in dp and are converted to Dp by callers.
+
+    fun getSidebarWidth(windowSize: WindowWidthSizeClass): Int =
+        when (windowSize) {
+            WindowWidthSizeClass.Compact -> 0
+            WindowWidthSizeClass.Medium -> 88
+            WindowWidthSizeClass.Expanded -> 272
+        }
+
+    fun getRailWidth(windowSize: WindowWidthSizeClass): Int =
+        when (windowSize) {
+            WindowWidthSizeClass.Compact -> 0
+            WindowWidthSizeClass.Medium -> 92
+            WindowWidthSizeClass.Expanded -> 92
+        }
+
+    fun getRailWidthExpanded(windowSize: WindowWidthSizeClass): Int =
+        when (windowSize) {
+            WindowWidthSizeClass.Compact -> 280
+            WindowWidthSizeClass.Medium -> 325
+            WindowWidthSizeClass.Expanded -> 325
+        }
+
+    fun getChannelListWidth(windowSize: WindowWidthSizeClass): Int? =
+        when (windowSize) {
+            WindowWidthSizeClass.Compact -> null
+            WindowWidthSizeClass.Medium -> null
+            WindowWidthSizeClass.Expanded -> 460
+        }
+
+    // Existing fixed values retained for compatibility with current call sites.
+
     val ScreenPaddingH = 32.dp
     val ScreenPaddingV = 24.dp
 
-    // Layer 1 — MD3 navigation panel. Expands to a drawer (labels) when focused,
-    // collapses to an icon rail when focus moves into a submenu.
+    // Layer 1 — MD3 navigation panel
     val SidebarWidthExpanded = 272.dp
     val SidebarWidthCollapsed = 88.dp
     /** The strip while the audio capsule is focused/activated — the capsule's tall rendering plus its inset. */
     val TopBarAudioExpandedHeight = 70.dp
 
-    // Layer 2 — category rail (expands to show full names when it holds focus)
+    // Layer 2 — category rail
     val RailWidth = 92.dp
-    val RailWidthExpanded = 325.dp // expanded (focused overlay) width — fits long category names
-    val RailWidthFixed = 272.dp    // Phase 2: fixed full-label category column (names wrap to 2 lines)
+    val RailWidthExpanded = 325.dp
+    val RailWidthFixed = 272.dp
     val RailPillSize = 56.dp
-    val ChannelListWidth = 460.dp  // Phase 2: fixed channel-list column (Live); preview/detail fills the rest.
-    // Widened from 400dp so each row can also show the current programme (EPG) on a second line — the
-    // preview pane (Modifier.weight(1f)) narrows in step, so no other layout value needs to change.
+    val ChannelListWidth = 460.dp
 
     // MD3 settings tonal icon tile
     val IconTileSize = 42.dp
@@ -32,14 +63,13 @@ object Dimens {
     val GapMedium = 16.dp
     val GapLarge = 24.dp
 
-    // M3 expressive shape scale (larger, rounder than the defaults).
+    // M3 expressive shape scale
     val CornerSmall = 12.dp
     val CornerMedium = 18.dp
     val CornerLarge = 24.dp
     val CardCorner = 20.dp
 
     val FocusBorderWidth = 2.dp
-
     val HomeRowPaddingH = 20.dp
 
     // Hero carousel
