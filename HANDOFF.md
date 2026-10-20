@@ -36,3 +36,6 @@
 - v1.0.8 (2026-10-20): released — Core 1.0.71 (Maven + Release) und App v1.0.8 (APKs live).
   KI-Empfehlung und Provider-Import sind hinter dem KI-Schalter (Standard aus); Key in den
   Einstellungen oder am Handy. CI beider Repos grün.
+- v1.0.9 (2026-10-20): released — App-only, Core-Pin bleibt 1.0.71. `CountryTags` liest
+  Provider-Tags in Balkenform (`┃DE┃`) und gemischtes Vokabular; Badges und Live-Filter teilen
+  dieselbe Deutung, 37 Sprachen dazu, „All languages" ist ein Schalter. APKs live, CI grün.
