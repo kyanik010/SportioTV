@@ -1386,12 +1386,13 @@ fun OwnTVShell(
                         else -> Row(modifier = Modifier.fillMaxSize()) {
                             // Compact screens use the full width for content; category rail remains
                             // available on medium and expanded layouts.
-                            if (windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact) {
+                            if (!isCompactScreen && sidebarWidth > 0) {
                                 CategoryRail(
                                     categories = categories,
                                     selectedIndex = selectedRail,
                                     onSelect = { railSelection[selectedSection] = it },
                                     onFocused = { focusedLayer = ShellLayer.RAIL },
+                                    width = sidebarWidth.dp,
                                 )
                             }
 
