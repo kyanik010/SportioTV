@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import android.app.Activity
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -149,6 +153,9 @@ fun OwnTVShell(
     onSwitchProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val windowSizeClass = calculateWindowSizeClass(activity = LocalContext.current as Activity)
+    val isCompactScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
+    val sidebarWidth = Dimens.getSidebarWidth(windowSizeClass.widthSizeClass)
     val colors = OwnTVTheme.colors
     val noSourceLabel = stringResource(R.string.shell_no_source)
     val subtitleLoadFailed = stringResource(R.string.content_subtitle_load_failed)
@@ -1377,12 +1384,16 @@ fun OwnTVShell(
                         )
 
                         else -> Row(modifier = Modifier.fillMaxSize()) {
-                            CategoryRail(
-                                categories = categories,
-                                selectedIndex = selectedRail,
-                                onSelect = { railSelection[selectedSection] = it },
-                                onFocused = { focusedLayer = ShellLayer.RAIL },
-                            )
+                            // Compact screens use the full width for content; category rail remains
+                            // available on medium and expanded layouts.
+                            if (windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact) {
+                                CategoryRail(
+                                    categories = categories,
+                                    selectedIndex = selectedRail,
+                                    onSelect = { railSelection[selectedSection] = it },
+                                    onFocused = { focusedLayer = ShellLayer.RAIL },
+                                )
+                            }
 
                             ContentPane(
                                 sectionTitle = stringResource(selectedSection.labelRes),
