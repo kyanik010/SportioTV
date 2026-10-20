@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import android.app.Activity
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.CompositionLocalProvider
@@ -122,6 +123,7 @@ internal enum class PlayerMode { NONE, FULLSCREEN, MINI, AUDIO }
  * The MD3 shell: a fixed navigation panel (Layer 1) plus the active destination. Settings is a
  * single-pane sectioned screen; browse sections keep the Folder Rail → Content → Preview layout.
  */
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun OwnTVShell(
     selectedSection: MainSection,
