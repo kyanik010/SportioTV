@@ -13,6 +13,7 @@ object Dimens {
             WindowWidthSizeClass.Compact -> 0
             WindowWidthSizeClass.Medium -> 88
             WindowWidthSizeClass.Expanded -> 272
+            else -> 272
         }
 
     fun getRailWidth(windowSize: WindowWidthSizeClass): Int =
@@ -20,6 +21,7 @@ object Dimens {
             WindowWidthSizeClass.Compact -> 0
             WindowWidthSizeClass.Medium -> 92
             WindowWidthSizeClass.Expanded -> 92
+            else -> 92
         }
 
     fun getRailWidthExpanded(windowSize: WindowWidthSizeClass): Int =
@@ -27,6 +29,7 @@ object Dimens {
             WindowWidthSizeClass.Compact -> 280
             WindowWidthSizeClass.Medium -> 325
             WindowWidthSizeClass.Expanded -> 325
+            else -> 325
         }
 
     fun getChannelListWidth(windowSize: WindowWidthSizeClass): Int? =
@@ -34,6 +37,7 @@ object Dimens {
             WindowWidthSizeClass.Compact -> null
             WindowWidthSizeClass.Medium -> null
             WindowWidthSizeClass.Expanded -> 460
+            else -> 460
         }
 
     // Existing fixed values retained for compatibility with current call sites.
