@@ -654,7 +654,7 @@ fun LiveScreen(
         fun fx(px: Int) = screenW * (px / 1920f)
         val margin = fx(64)
         val row = screenW - margin * 2
-        val previewShown = !compactScreen && if (separate) panelShares?.preview != 0 else stageWidths?.preview != 0
+        val previewShown = !compactScreen && (if (separate) panelShares?.preview != 0 else stageWidths?.preview != 0)
         val liveHints = listOf(
             stringResource(R.string.common_ok) to stringResource(R.string.content_key_watch),
             "◀" to stringResource(R.string.content_category_browser_title),
@@ -1278,11 +1278,12 @@ private fun LiveLanguageDialog(
     }
     BackHandler { onDismiss() }
     OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
-        Box(Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim)) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim)) {
             Column(
                 Modifier
-                    .padding(start = 560.mpx, top = 150.mpx, bottom = 24.mpx)
-                    .width(640.mpx)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 150.mpx, bottom = 24.mpx)
+                    .width(minOf(maxWidth * 0.9f, 640.mpx))
                     .trapAllFocusExit()
                     .focusGroup(),
             ) {
@@ -1411,10 +1412,11 @@ private fun ChannelContextMenu(
             Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim).longPressMenuGuard(),
         ) {
             val w = maxWidth
+            val menuWidth = minOf(w * 0.9f, 540.mpx)
             tv.own.owntv.ui.stage.StageMenu(
                 Modifier
-                    .padding(start = w * (930f / 1920f), top = 118.mpx, bottom = 24.mpx)
-                    .width(540.mpx)
+                    .padding(start = (w - menuWidth) / 2, top = 118.mpx, bottom = 24.mpx)
+                    .width(menuWidth)
                     .verticalScroll(rememberScrollState())
                     .trapAllFocusExit()
                     .focusGroup(),
@@ -1561,11 +1563,12 @@ internal fun EpgMatchDialog(
 
     // The Stage picker: a menu panel over the scrim, focus trapped inside, the list capped so Close stays reachable.
     tv.own.owntv.ui.components.OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
-        androidx.compose.foundation.layout.Box(
+        BoxWithConstraints(
             Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim),
-            contentAlignment = Alignment.Center,
         ) {
-            tv.own.owntv.ui.stage.StageMenu(Modifier.width(640.mpx).trapAllFocusExit().focusGroup()) {
+            tv.own.owntv.ui.stage.StageMenu(
+                Modifier.align(Alignment.Center).width(minOf(maxWidth * 0.9f, 640.mpx)).trapAllFocusExit().focusGroup(),
+            ) {
                 tv.own.owntv.ui.stage.StageMenuHeader(
                     title = stringResource(R.string.content_match_epg),
                     subtitle = if (currentMatch != null) {
