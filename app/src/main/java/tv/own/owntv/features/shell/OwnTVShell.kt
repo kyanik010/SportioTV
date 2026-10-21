@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -118,6 +122,7 @@ internal enum class PlayerMode { NONE, FULLSCREEN, MINI, AUDIO }
  * The MD3 shell: a fixed navigation panel (Layer 1) plus the active destination. Settings is a
  * single-pane sectioned screen; browse sections keep the Folder Rail → Content → Preview layout.
  */
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun OwnTVShell(
     selectedSection: MainSection,
@@ -149,6 +154,9 @@ fun OwnTVShell(
     onSwitchProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val windowSizeClass = calculateWindowSizeClass(activity = requireNotNull(LocalActivity.current))
+    val isCompactScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
+    val sidebarWidth = Dimens.getSidebarWidth(windowSizeClass.widthSizeClass)
     val colors = OwnTVTheme.colors
     val noSourceLabel = stringResource(R.string.shell_no_source)
     val subtitleLoadFailed = stringResource(R.string.content_subtitle_load_failed)
@@ -1377,12 +1385,17 @@ fun OwnTVShell(
                         )
 
                         else -> Row(modifier = Modifier.fillMaxSize()) {
-                            CategoryRail(
-                                categories = categories,
-                                selectedIndex = selectedRail,
-                                onSelect = { railSelection[selectedSection] = it },
-                                onFocused = { focusedLayer = ShellLayer.RAIL },
-                            )
+                            // Compact screens use the full width for content; category rail remains
+                            // available on medium and expanded layouts.
+                            if (!isCompactScreen && sidebarWidth > 0) {
+                                CategoryRail(
+                                    categories = categories,
+                                    selectedIndex = selectedRail,
+                                    onSelect = { railSelection[selectedSection] = it },
+                                    onFocused = { focusedLayer = ShellLayer.RAIL },
+                                    width = sidebarWidth.dp,
+                                )
+                            }
 
                             ContentPane(
                                 sectionTitle = stringResource(selectedSection.labelRes),
