@@ -45,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -141,7 +143,16 @@ fun LiveScreen(
     lockedKey: LiveKey? = null,
     /** Guide view (Live TV tool row): opens the TV Guide until the in-place guide arrives (P5). */
     onOpenGuide: () -> Unit = {},
+    windowSizeClass: WindowWidthSizeClass? = null,
 ) {
+    val configuration = LocalConfiguration.current
+    val responsiveWindowSizeClass = windowSizeClass ?: when {
+        configuration.screenWidthDp < 600 -> WindowWidthSizeClass.Compact
+        configuration.screenWidthDp < 840 -> WindowWidthSizeClass.Medium
+        else -> WindowWidthSizeClass.Expanded
+    }
+    val compactScreen = responsiveWindowSizeClass == WindowWidthSizeClass.Compact
+    val preferredChannelListWidth = Dimens.getChannelListWidth(responsiveWindowSizeClass)?.dp
     val vm: LiveViewModel = koinViewModel()
     // Locking and unlocking are one pair: the pin belongs to this screen's lifetime, not to the view
     // model's. On the television that view model is a single instance shared with the browse section,
@@ -544,7 +555,7 @@ fun LiveScreen(
     val nowProgrammes by vm.nowProgrammes.collectAsStateWithLifecycle()
     val playlistMarks by vm.playlistMarks.collectAsStateWithLifecycle()
     // Separate panels keeps the categories on screen; the Stage layout opens them as a sheet on Left.
-    val separate = liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null
+    val separate = liveLayout == tv.own.owntv.core.settings.SettingsRepository.LiveLayout.SEPARATE && lockedKey == null && !compactScreen
     var categoriesOpen by remember { mutableStateOf(false) }
     var sheetHadFocus by remember { mutableStateOf(false) }
     // The current channel's row. After a long-press that row carries contextFocus instead of selFocus
@@ -643,7 +654,7 @@ fun LiveScreen(
         fun fx(px: Int) = screenW * (px / 1920f)
         val margin = fx(64)
         val row = screenW - margin * 2
-        val previewShown = if (separate) panelShares?.preview != 0 else stageWidths?.preview != 0
+        val previewShown = !compactScreen && (if (separate) panelShares?.preview != 0 else stageWidths?.preview != 0)
         val liveHints = listOf(
             stringResource(R.string.common_ok) to stringResource(R.string.content_key_watch),
             "◀" to stringResource(R.string.content_category_browser_title),
@@ -656,24 +667,30 @@ fun LiveScreen(
         val listW: Dp
         val stageW: Dp
         val sheetW: Dp
-        if (separate && panelShares != null) {
+        if (compactScreen) {
+            // Phone-sized windows use the full row for channels and never reserve a preview pane.
+            colW = 0.dp; sheetW = 0.dp; listW = row; stageW = 0.dp
+        } else if (separate && panelShares != null) {
             val p = computePanelWidths(panelShares, row, gapCat + if (previewShown) gapStage else 0.dp)
-            colW = p.category; listW = p.list; stageW = p.preview; sheetW = 0.dp
+            colW = p.category
+            listW = preferredChannelListWidth ?: p.list
+            stageW = if (previewShown) (row - colW - gapCat - listW - gapStage).coerceAtLeast(1.dp) else 0.dp
+            sheetW = 0.dp
         } else if (!separate && stageWidths != null) {
             // The sheet is a share of the screen; the row between the margins is list + preview.
             val rest = (row - if (previewShown) gapStage else 0.dp).coerceAtLeast(1.dp)
             colW = 0.dp
             sheetW = screenW * (stageWidths.sheet / 100f)
-            listW = rest * (stageWidths.list / 100f)
-            stageW = rest - listW
+            listW = preferredChannelListWidth ?: rest * (stageWidths.list / 100f)
+            stageW = (rest - listW).coerceAtLeast(1.dp)
         } else {
-            // The mockup's geometry.
+            // Keep the list at the TV target width on expanded windows; smaller windows share the available row.
             colW = fx(350); sheetW = fx(450)
-            listW = if (separate) fx(620) else fx(846)
-            stageW = if (separate) fx(766) else fx(912)
+            listW = preferredChannelListWidth ?: if (separate) fx(620) else fx(846)
+            stageW = if (previewShown) (row - colW - gapCat - listW - gapStage).coerceAtLeast(1.dp) else 0.dp
         }
         val listX = if (separate) margin + colW + gapCat else margin
-        val listWidth = if (previewShown) listW else row - (listX - margin)
+        val listWidth = if (previewShown) listW else preferredChannelListWidth ?: row - (listX - margin)
 
         if (separate) {
             LiveCategories(
@@ -1261,11 +1278,12 @@ private fun LiveLanguageDialog(
     }
     BackHandler { onDismiss() }
     OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
-        Box(Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim)) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim)) {
             Column(
                 Modifier
-                    .padding(start = 560.mpx, top = 150.mpx, bottom = 24.mpx)
-                    .width(640.mpx)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 150.mpx, bottom = 24.mpx)
+                    .width(minOf(maxWidth * 0.9f, 640.mpx))
                     .trapAllFocusExit()
                     .focusGroup(),
             ) {
@@ -1394,10 +1412,11 @@ private fun ChannelContextMenu(
             Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim).longPressMenuGuard(),
         ) {
             val w = maxWidth
+            val menuWidth = minOf(w * 0.9f, 540.mpx)
             tv.own.owntv.ui.stage.StageMenu(
                 Modifier
-                    .padding(start = w * (930f / 1920f), top = 118.mpx, bottom = 24.mpx)
-                    .width(540.mpx)
+                    .padding(start = (w - menuWidth) / 2, top = 118.mpx, bottom = 24.mpx)
+                    .width(menuWidth)
                     .verticalScroll(rememberScrollState())
                     .trapAllFocusExit()
                     .focusGroup(),
@@ -1544,11 +1563,12 @@ internal fun EpgMatchDialog(
 
     // The Stage picker: a menu panel over the scrim, focus trapped inside, the list capped so Close stays reachable.
     tv.own.owntv.ui.components.OwnTVPopup(onDismissRequest = onDismiss, stageLayout = true) {
-        androidx.compose.foundation.layout.Box(
+        BoxWithConstraints(
             Modifier.fillMaxSize().background(tv.own.owntv.ui.theme.StageColors.Scrim),
-            contentAlignment = Alignment.Center,
         ) {
-            tv.own.owntv.ui.stage.StageMenu(Modifier.width(640.mpx).trapAllFocusExit().focusGroup()) {
+            tv.own.owntv.ui.stage.StageMenu(
+                Modifier.align(Alignment.Center).width(minOf(maxWidth * 0.9f, 640.mpx)).trapAllFocusExit().focusGroup(),
+            ) {
                 tv.own.owntv.ui.stage.StageMenuHeader(
                     title = stringResource(R.string.content_match_epg),
                     subtitle = if (currentMatch != null) {
