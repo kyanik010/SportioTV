@@ -52,6 +52,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.zIndex
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -130,9 +132,10 @@ fun CategoryRail(
     // down. Caller passes the row's index and clears it in [onRowFocused].
     focusRowIndex: Int? = null,
     onRowFocused: () -> Unit = {},
-    // Column width. Defaults to the stock rail width; Live/Movies/Series override it when the user has
-    // turned on manual panel widths for that section (see PanelWidths.kt).
-    width: androidx.compose.ui.unit.Dp = Dimens.RailWidthFixed,
+    // Optional explicit width for screens with manual panel widths (see PanelWidths.kt).
+    // Otherwise the rail derives its width from the current window size class.
+    width: androidx.compose.ui.unit.Dp? = null,
+    windowSizeClass: WindowWidthSizeClass? = null,
     // Browse screens place this column inside one shared content panel. Overlays keep the standalone
     // panel so they remain independently raised above the screen beneath them.
     showPanel: Boolean = true,
@@ -144,6 +147,12 @@ fun CategoryRail(
     onNavigateRight: (() -> Unit)? = null,
 ) {
     val colors = OwnTVTheme.colors
+    val configuration = LocalConfiguration.current
+    val responsiveWindowSizeClass = windowSizeClass ?: when {
+        configuration.screenWidthDp < 600 -> WindowWidthSizeClass.Compact
+        configuration.screenWidthDp < 840 -> WindowWidthSizeClass.Medium
+        else -> WindowWidthSizeClass.Expanded
+    }
     var hasFocus by remember { mutableStateOf(false) }
     // Folder search (for big libraries). Filters the rail by name but keeps each folder's ORIGINAL
     // index, so selection highlighting and onSelect still map correctly. Reset when the rail loses
@@ -165,9 +174,17 @@ fun CategoryRail(
         }
         onRowFocused()
     }
-    // Phase 2 — the rail is a FIXED full-label column (no collapse/abbreviation overlay), so it never
-    // reflows the layout on the D-pad. Always "expanded" = full category names.
-    val expanded = true
+    // Keep full labels in the expanded rail, but use a compact icon rail when focus is not inside it.
+    // Compact windows hide this side rail so the main content can use the available width.
+    val expanded = hasFocus
+    val responsiveRailWidth = width ?: when (responsiveWindowSizeClass) {
+        WindowWidthSizeClass.Compact -> 0.dp
+        else -> if (expanded) {
+            Dimens.getRailWidthExpanded(responsiveWindowSizeClass).dp
+        } else {
+            Dimens.getRailWidth(responsiveWindowSizeClass).dp
+        }
+    }
 
     val selectedFocus = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
@@ -204,7 +221,7 @@ fun CategoryRail(
 
     // Fixed full-label column in the screen's Row — a real grid column (no overlay), so it takes its own
     // space and nothing reflows when focus enters/leaves it.
-    val railModifier = modifier.fillMaxHeight().width(width)
+    val railModifier = modifier.fillMaxHeight().width(responsiveRailWidth)
     Box(
         modifier = if (showPanel) {
             railModifier.roundedPanel(fillColor = panelFill ?: RailPanelFill, surface = GlassSurface.SIDEBAR)
