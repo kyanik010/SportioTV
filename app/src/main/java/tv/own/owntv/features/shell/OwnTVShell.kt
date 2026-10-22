@@ -1393,7 +1393,6 @@ fun OwnTVShell(
                                     selectedIndex = selectedRail,
                                     onSelect = { railSelection[selectedSection] = it },
                                     onFocused = { focusedLayer = ShellLayer.RAIL },
-                                    width = sidebarWidth.dp,
                                 )
                             }
 
