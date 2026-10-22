@@ -378,6 +378,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material.icons.core)
+    // Window size classes for responsive phone/tablet/TV layouts.
+    implementation("androidx.compose.material3:material3-window-size-class:1.4.0")
 
     // Compose for TV
     implementation(libs.androidx.tv.material)
