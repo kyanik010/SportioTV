@@ -728,16 +728,10 @@ fun LiveScreen(
                 .fillMaxSize()
                 .then(if (categoriesOpen) Modifier.graphicsLayer { alpha = 0.4f } else Modifier),
         ) {
-            LiveHeader(
-                category = headerLabel,
-                count = count,
-                showChevron = !separate && lockedKey == null,
-                modifier = Modifier.padding(start = fx(84), top = 52.mpx).width(listX - fx(84) + listWidth),
-            )
             // Header tools + channel list: one focus group.
             Column(
                 modifier = Modifier
-                    .padding(start = listX, top = 118.mpx)
+                    .padding(start = listX, top = 24.mpx)
                     .width(listWidth)
                     .fillMaxHeight()
                     .onFocusChanged { channelPaneFocused = it.hasFocus }
@@ -797,98 +791,6 @@ fun LiveScreen(
                     }
                     .focusGroup(),
             ) {
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val compactTools = maxWidth < 600.dp
-                    if (compactTools) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).focusGroup(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            tv.own.owntv.ui.stage.StageSearchField(
-                                query = searchQuery,
-                                onQueryChange = vm::setSearchQuery,
-                                placeholder = if (separate) stringResource(R.string.common_search) else stringResource(R.string.content_search_in, headerLabel),
-                                modifier = Modifier.fillMaxWidth().focusRequester(listSearchFocus)
-                                    .onFocusChanged { if (it.hasFocus && previewEnabled) vm.stopPreview() }
-                                    .onPreviewKeyEvent { e ->
-                                        if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                                            e.key == androidx.compose.ui.input.key.Key.DirectionLeft &&
-                                            searchQuery.isEmpty() && lockedKey == null
-                                        ) {
-                                            if (separate) runCatching { railFocus.requestFocus() } else categoriesOpen = true
-                                            true
-                                        } else false
-                                    },
-                                height = 44.dp,
-                                radius = 14.dp,
-                                horizontalPadding = 12.dp,
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                tv.own.owntv.ui.stage.StageTool(
-                                    text = null, icon = OwnTVIcon.SORT,
-                                    value = if (sortMode == tv.own.owntv.core.settings.SettingsRepository.SortMode.ALPHA) stringResource(R.string.settings_sort_alpha) else stringResource(R.string.content_epg_sort_provider),
-                                    onClick = vm::toggleSort,
-                                )
-                                tv.own.owntv.ui.stage.StageTool(
-                                    text = null, icon = OwnTVIcon.LANGUAGE,
-                                    value = if (liveAllOn) stringResource(R.string.live_language_all) else stringResource(R.string.live_language_filtered, liveActiveCount, liveOptions.size),
-                                    onClick = { languageOpen = true },
-                                )
-                                tv.own.owntv.ui.stage.StageTool(
-                                    text = stringResource(R.string.content_live_guide_view),
-                                    icon = OwnTVIcon.GRID,
-                                    onClick = onOpenGuide,
-                                )
-                            }
-                        }
-                    } else {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.mpx),
-                            modifier = Modifier.padding(start = 4.mpx).focusGroup(),
-                        ) {
-                            tv.own.owntv.ui.stage.StageSearchField(
-                                query = searchQuery,
-                                onQueryChange = vm::setSearchQuery,
-                                placeholder = if (separate) stringResource(R.string.common_search) else stringResource(R.string.content_search_in, headerLabel),
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .width(if (separate) listWidth * (230f / 620f) else listWidth * (456f / 846f))
-                                    .focusRequester(listSearchFocus)
-                                    .onFocusChanged { if (it.hasFocus && previewEnabled) vm.stopPreview() }
-                                    .onPreviewKeyEvent { e ->
-                                        if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                                            e.key == androidx.compose.ui.input.key.Key.DirectionLeft &&
-                                            searchQuery.isEmpty() && lockedKey == null
-                                        ) {
-                                            if (separate) runCatching { railFocus.requestFocus() } else categoriesOpen = true
-                                            true
-                                        } else false
-                                    },
-                            )
-                            tv.own.owntv.ui.stage.StageTool(
-                                text = null, icon = OwnTVIcon.SORT,
-                                value = if (sortMode == tv.own.owntv.core.settings.SettingsRepository.SortMode.ALPHA) stringResource(R.string.settings_sort_alpha) else stringResource(R.string.content_epg_sort_provider),
-                                onClick = vm::toggleSort,
-                            )
-                            tv.own.owntv.ui.stage.StageTool(
-                                text = null, icon = OwnTVIcon.LANGUAGE,
-                                value = if (liveAllOn) stringResource(R.string.live_language_all) else stringResource(R.string.live_language_filtered, liveActiveCount, liveOptions.size),
-                                onClick = { languageOpen = true },
-                            )
-                            tv.own.owntv.ui.stage.StageTool(
-                                text = stringResource(R.string.content_live_guide_view),
-                                icon = OwnTVIcon.GRID,
-                                onClick = onOpenGuide,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(20.mpx))
                 if (channels.itemCount == 0) {
                     Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                         Text(
